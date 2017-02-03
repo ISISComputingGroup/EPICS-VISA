@@ -1,4 +1,4 @@
-record(stringin, "$(P):GETIDN")
+record(stringin, "$(P)$(Q)GETIDN")
 {
     field(DESC, "Query device")
     field(SCAN, "Passive")
@@ -6,7 +6,7 @@ record(stringin, "$(P):GETIDN")
     field(INP,  "@VISAdrvTest.proto getIDN $(PORT)")
 }
 
-record(stringin, "$(P):GETQ22")
+record(stringin, "$(P)$(Q)GETQ22")
 {
     field(DESC, "Query device")
     field(SCAN, "Passive")

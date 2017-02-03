@@ -14,8 +14,7 @@ cd "${TOP}"
 dbLoadDatabase "dbd/VISAdrvTest.dbd"
 VISAdrvTest_registerRecordDeviceDriver pdbbase
 
-#drvAsynVISAPortConfigure("visa","visa://ndximat/GPIB0::3::INSTR")
-drvAsynVISAPortConfigure("visa","visa://130.246.37.54/GPIB0::3::INSTR")
+drvAsynVISAPortConfigure("visa","visa://ndximat/GPIB0::3::INSTR")
 
 asynOctetSetOutputEos("visa",0,"\\r")
 asynOctetSetInputEos("visa",0,"\\r")
@@ -23,7 +22,7 @@ asynOctetSetInputEos("visa",0,"\\r")
 epicsEnvSet ("STREAM_PROTOCOL_PATH", "$(TOP)/data")
 
 ## Load our record instances
-dbLoadRecords("db/VISAdrvTest.db","P=$(MYPVPREFIX),PORT=visa")
+dbLoadRecords("db/VISAdrvTest.db","P=$(MYPVPREFIX)Q=VISA:,PORT=visa")
 dbLoadRecords("$(ASYN)/db/asynRecord.db","P=$(MYPVPREFIX),R=VISA:ASYNREC,PORT=visa,ADDR=0,OMAX=80,IMAX=80")
 
 cd "${TOP}/iocBoot/${IOC}"

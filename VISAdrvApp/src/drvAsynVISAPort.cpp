@@ -29,18 +29,21 @@
 
 #include "drvAsynVISAPort.h"
 
+/// driver private data structure
 typedef struct {
     asynUser          *pasynUser; 
-    char              *portName;
-	ViSession          vi;
+    char              *portName;  ///< asyn port name
+	ViSession 		   defaultRM;
+	ViSession          vi;    ///< current session handle
 	bool               connected;
-    char              *resourceName;
-    unsigned long      nRead;
-    unsigned long      nWritten;
+    char              *resourceName; ///< VISA resource name
+    unsigned long      nRead;  ///< number of bytes read from this resource name
+    unsigned long      nWritten; ///< number of bytes written to this resource
     asynInterface      common;
     asynInterface      octet;
 } visaDriver_t;
 
+/// translate VISA error code to readable string 
 static std::string errMsg(ViSession vi, ViStatus err)
 {
     char err_msg[1024]={0};
@@ -48,9 +51,7 @@ static std::string errMsg(ViSession vi, ViStatus err)
     return std::string(err_msg);
 }
 
-/*
- * Close a connection
- */
+/// close a VISA session
 static void
 closeConnection(asynUser *pasynUser, visaDriver_t *driver, const char* reason)
 {
@@ -58,7 +59,7 @@ closeConnection(asynUser *pasynUser, visaDriver_t *driver, const char* reason)
               "Close %s connection %s\n", driver->resourceName, reason);
     if (!driver->connected) {
         epicsSnprintf(pasynUser->errorMessage,pasynUser->errorMessageSize,
-                              "%s: Link already closed!", driver->resourceName);
+                              "%s: session already closed", driver->resourceName);
 	    return;
     }
 	ViStatus err;
@@ -67,7 +68,7 @@ closeConnection(asynUser *pasynUser, visaDriver_t *driver, const char* reason)
         epicsSnprintf(pasynUser->errorMessage,pasynUser->errorMessageSize,
                               "%s: viClose error", driver->resourceName);
 	}
-    driver->connected = false;	
+    driver->connected = false;
 	driver->vi = VI_NULL;
 }
 
@@ -99,8 +100,6 @@ visaCleanup (void *arg)
     asynStatus status;
     visaDriver_t *driver = (visaDriver_t*)arg;
 	
-	//delete default rm?
-
     if (!arg) return;
     status=pasynManager->lockPort(driver->pasynUser);
     if(status!=asynSuccess)
@@ -108,6 +107,8 @@ visaCleanup (void *arg)
 
     if(status==asynSuccess)
         pasynManager->unlockPort(driver->pasynUser);
+
+	viClose(driver->defaultRM); // this will automatically close all sessions 
 }
 
 static void
@@ -134,28 +135,19 @@ connectIt(void *drvPvt, asynUser *pasynUser)
 
     if (driver->connected) {
         epicsSnprintf(pasynUser->errorMessage,pasynUser->errorMessageSize,
-                              "%s: Link already open!", driver->resourceName);
+                              "%s: session already open.", driver->resourceName);
         return asynError;
     }
-	ViSession defaultRM;
 	ViStatus err;
-	if ( (err = viOpenDefaultRM(&defaultRM)) != VI_SUCCESS )
+	if ( (err = viOpen(driver->defaultRM, driver->resourceName,VI_NULL,VI_NULL,&(driver->vi))) != VI_SUCCESS )
 	{
         epicsSnprintf(pasynUser->errorMessage,pasynUser->errorMessageSize,
-                              "%s: viOpenDerfaultRm", driver->resourceName);
-		return asynError; // close default rm
-		
-	}
-	if ( (err = viOpen(defaultRM, driver->resourceName,VI_NULL,VI_NULL,&(driver->vi))) != VI_SUCCESS )
-	{
-        epicsSnprintf(pasynUser->errorMessage,pasynUser->errorMessageSize,
-                              "%s: viOpen %s", driver->resourceName, errMsg(defaultRM, err).c_str());
-		return asynError; // close default rm
+                              "%s: viOpen %s", driver->resourceName, errMsg(driver->defaultRM, err).c_str());
+		return asynError;
 	}
     asynPrint(pasynUser, ASYN_TRACE_FLOW,
-                          "Opened connection to %s\n", driver->resourceName);
+                          "Opened connection to \"%s\"\n", driver->resourceName);
     driver->connected = true;
-	std::cerr << "Connected to " << driver->resourceName << std::endl;
     return asynSuccess;
 }
 
@@ -278,7 +270,7 @@ static asynStatus readIt(void *drvPvt, asynUser *pasynUser,
 			break;
 			
 		default:
-			std::cerr << "Unknown error code " << err << std::endl;
+			std::cerr << driver->portName << ": Unknown error code " << err << std::endl;
 			break;
 	}
 	if (actual > 0)
@@ -290,8 +282,7 @@ static asynStatus readIt(void *drvPvt, asynUser *pasynUser,
 	else
 	{
             epicsSnprintf(pasynUser->errorMessage,pasynUser->errorMessageSize,
-                          "%s read",
-                          driver->resourceName);
+                          "%s read", driver->resourceName);
             closeConnection(pasynUser,driver,"Read error");
             status = asynError;
     }
@@ -305,9 +296,6 @@ static asynStatus readIt(void *drvPvt, asynUser *pasynUser,
     return status;
 }
 
-/*
- * Flush pending input
- */
 static asynStatus
 flushIt(void *drvPvt,asynUser *pasynUser)
 {
@@ -344,11 +332,11 @@ drvAsynVISAPortConfigure(const char *portName,
      * Check arguments
      */
     if (portName == NULL) {
-        printf("Port name missing.\n");
+        printf("drvAsynVISAPortConfigure: Port name missing.\n");
         return -1;
     }
     if (resourceName == NULL) {
-        printf("resourceName information missing.\n");
+        printf("drvAsynVISAPortConfigure: resourceName information missing.\n");
         return -1;
     }
 
@@ -357,7 +345,6 @@ drvAsynVISAPortConfigure(const char *portName,
      */
     if (firstTime) {
         firstTime = 0;
-		// defaultRM ?
     }
 
     /*
@@ -385,13 +372,13 @@ drvAsynVISAPortConfigure(const char *portName,
                                    priority,
                                    0) != asynSuccess) {
         printf("drvAsynVISAPortConfigure: Can't register myself.\n");
-        visaCleanup(driver);
+        driverCleanup(driver);
         return -1;
     }
     status = pasynManager->registerInterface(driver->portName,&driver->common);
     if(status != asynSuccess) {
         printf("drvAsynVISAPortConfigure: Can't register common.\n");
-        visaCleanup(driver);
+        driverCleanup(driver);
         return -1;
     }
     pasynOctet->read = readIt;
@@ -407,9 +394,17 @@ drvAsynVISAPortConfigure(const char *portName,
         return -1;
     }
     driver->pasynUser = pasynManager->createAsynUser(0,0);
+	if ( viOpenDefaultRM(&(driver->defaultRM)) != VI_SUCCESS )
+	{
+        printf("drvAsynVISAPortConfigure: viOpenDefaultRm failed for port %s\n", driver->portName);
+        driverCleanup(driver);
+		return -1;
+		
+	}
     status = pasynManager->connectDevice(driver->pasynUser,driver->portName,-1);
     if(status != asynSuccess) {
-        printf("connectDevice failed %s\n",driver->pasynUser->errorMessage);
+        printf("drvAsynVISAPortConfigure: connectDevice failed %s\n",driver->pasynUser->errorMessage);
+		visaCleanup(driver);
         driverCleanup(driver);
         return -1;
     }

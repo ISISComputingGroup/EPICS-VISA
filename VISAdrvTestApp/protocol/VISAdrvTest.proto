@@ -1,0 +1,9 @@
+getIDN {
+    out "*IDN?";
+	in "%40c";
+}
+
+getQ22 {
+    out "Q22";
+	in "%40c";
+}

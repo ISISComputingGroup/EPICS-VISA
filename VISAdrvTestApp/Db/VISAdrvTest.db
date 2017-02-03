@@ -1,0 +1,15 @@
+record(stringin, "$(P):GETIDN")
+{
+    field(DESC, "Query device")
+    field(SCAN, "Passive")
+    field(DTYP, "stream")
+    field(INP,  "@VISAdrvTest.proto getIDN $(PORT)")
+}
+
+record(stringin, "$(P):GETQ22")
+{
+    field(DESC, "Query device")
+    field(SCAN, "Passive")
+    field(DTYP, "stream")
+    field(INP,  "@VISAdrvTest.proto getQ22 $(PORT)")
+}

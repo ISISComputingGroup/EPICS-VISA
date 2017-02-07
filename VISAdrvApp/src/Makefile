@@ -28,14 +28,16 @@ VISAdrv_LIBS += $(EPICS_BASE_IOC_LIBS)
 
 ifneq ($(findstring windows,$(EPICS_HOST_ARCH)),)
 VISALIB = NIVISA/Lib_x64/msc
+LIB_INSTALLS_WIN32 += $(VISALIB)/visa64.lib
+VISAdrv_SYS_LIBS_WIN32 += $(VISALIB)/visa64
 else
-VISALIB = NIVISA/Lib/msc
+VISALIB = NIVISA/Lib_x64/msc
+#VISALIB = NIVISA/Lib/msc
+LIB_INSTALLS_WIN32 += $(VISALIB)/visa32.lib
+VISAdrv_SYS_LIBS_WIN32 += $(VISALIB)/visa32
 endif
 
 #BIN_INSTALLS_WIN32 += $(NIVISADIR)/Bin/*.dll
-LIB_INSTALLS_WIN32 += $(VISALIB)/visa64.lib
-
-VISAdrv_SYS_LIBS_WIN32 += $(VISALIB)/visa64 
 
 #===========================
 
@@ -50,6 +52,7 @@ NIVISA :
 ifeq (WIN32,$(OS_CLASS))
 	xcopy /D /I /E /Q /Y /R $(NIVISADIR)\Include $@\include
 	xcopy /D /I /E /Q /Y /R $(NIVISADIR)\Lib_x64 $@\Lib_x64
+	xcopy /D /I /E /Q /Y /R $(NIVISADIR)\Lib $@\Lib
 endif
 #ifeq (Linux,$(OS_CLASS))
 #	cp -r $(NIVISA)/include $@

@@ -10,7 +10,7 @@ define DIR_template
 endef
 $(foreach dir, $(filter-out configure,$(DIRS)),$(eval $(call DIR_template,$(dir))))
 
-VISAdrvTestApp_DEPEND_DIRS += VISAdrvTestApp
+VISAdrvTestApp_DEPEND_DIRS += VISAdrvApp
 
 iocBoot_DEPEND_DIRS += $(filter %App,$(DIRS))
 

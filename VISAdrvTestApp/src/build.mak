@@ -25,7 +25,8 @@ $(APPNAME)_DBD += stream.dbd
 $(APPNAME)_LIBS += stream pcre VISAdrv asyn
 ifneq ($(findstring windows,$(EPICS_HOST_ARCH)),)
 $(APPNAME)_LIBS += visa64
-else
+endif
+ifneq ($(findstring win32,$(EPICS_HOST_ARCH)),)
 $(APPNAME)_LIBS += visa32
 endif
 # VISAdrvTest_registerRecordDeviceDriver.cpp derives from VISAdrvTest.dbd

@@ -30,14 +30,14 @@ ifneq ($(findstring windows,$(EPICS_HOST_ARCH)),)
 VISALIB = NIVISA/Lib_x64/msc
 LIB_INSTALLS_WIN32 += $(VISALIB)/visa64.lib
 VISAdrv_SYS_LIBS_WIN32 += $(VISALIB)/visa64
-else
-#VISALIB = NIVISA/Lib_x64/msc
+BIN_INSTALLS_WIN32 += $(NIVISADIR)/Bin_x64/*.dll
+endif
+ifneq ($(findstring win32,$(EPICS_HOST_ARCH)),)
 VISALIB = NIVISA/lib/msc
 LIB_INSTALLS_WIN32 += $(VISALIB)/visa32.lib
 VISAdrv_SYS_LIBS_WIN32 += $(VISALIB)/visa32
+BIN_INSTALLS_WIN32 += $(NIVISADIR)/Bin/*.dll
 endif
-
-#BIN_INSTALLS_WIN32 += $(NIVISADIR)/Bin/*.dll
 
 #===========================
 

@@ -496,7 +496,7 @@ static asynStatus writeIt(void *drvPvt, asynUser *pasynUser,
 	}
 	ViStatus err;
 	// a timeout of zero means different things on read and write, so always need to set
-	if (driver->timeout == 0 || driver->timeout != pasynUser->timeout) {
+	// always need to set timeout as use immediate as part of read
         driver->timeout = pasynUser->timeout;
 		if (driver->timeout == 0)
 		{			
@@ -507,7 +507,6 @@ static asynStatus writeIt(void *drvPvt, asynUser *pasynUser,
 			err = viSetAttribute(driver->vi, VI_ATTR_TMO_VALUE, static_cast<int>(driver->timeout * 1000.0));
 		}
 		VI_CHECK_ERROR("set timeout", err);
-    }
 	unsigned long actual = 0;
 	err = viWrite(driver->vi, (ViBuf)data, numchars, &actual);
 	if ( err == VI_ERROR_TMO )
@@ -557,43 +556,58 @@ static asynStatus readIt(void *drvPvt, asynUser *pasynUser,
                   "%s maxchars %d. Why <=0?",driver->resourceName,(int)maxchars);
         return asynError;
     }
-	unsigned long actual = 0;
+	unsigned long actual = 0, actualex = 0;
 	ViStatus err;
     *nbytesTransfered = 0;
     if (gotEom) *gotEom = 0;
-	// a timeout of zero means different things on read and write, so always need to set
-	if (driver->timeout == 0 || driver->timeout != pasynUser->timeout) {
-        driver->timeout = pasynUser->timeout;
-		if (driver->timeout == 0)
-		{			
-			err = viSetAttribute(driver->vi, VI_ATTR_TMO_VALUE, VI_TMO_INFINITE);
-		}
-		else
-		{
-			err = viSetAttribute(driver->vi, VI_ATTR_TMO_VALUE, static_cast<int>(driver->timeout * 1000));
-		}
-		VI_CHECK_ERROR("set timeout", err);
-    }
-    ViUInt32 avail = 0;
+//	ViUInt32 avail = 0;
 	// should we only ever try and read one character?
-	if (driver->isSerial)
+//	if (driver->isSerial)
+//	{
+//		if (viGetAttribute(driver->vi, VI_ATTR_ASRL_AVAIL_NUM, &avail) == VI_SUCCESS)
+//		{
+//			if (avail > maxchars)
+//			{
+//				avail = maxchars;
+//			}
+//		}
+//	}
+
+// try and read one character, if we don;t time out try and rad more with an imemdiate timeout
+// we always need to set timeout as we resetr to immediate below
+	driver->timeout = pasynUser->timeout;
+	// a timeout of zero means different things on read and write, so always need to set
+	if (driver->timeout == 0)
 	{
-	    if (viGetAttribute(driver->vi, VI_ATTR_ASRL_AVAIL_NUM, &avail) == VI_SUCCESS)
-	    {
-		    if (avail > maxchars)
-		    {
-			    avail = maxchars;
-		    }
-		}
+		err = viSetAttribute(driver->vi, VI_ATTR_TMO_VALUE, VI_TMO_INFINITE);
 	}
-	// if no data available, should we read one or maxchar? maxchar will probably result in a timeout
-    err = viRead(driver->vi, (ViBuf)data, (avail > 0 ? avail : 1), &actual);
+	else
+	{
+		err = viSetAttribute(driver->vi, VI_ATTR_TMO_VALUE, static_cast<int>(driver->timeout * 1000));
+	}
+	VI_CHECK_ERROR("set timeout", err);
+	err = viRead(driver->vi, (ViBuf)data, 1, &actual);
 	if (err < 0 && err != VI_ERROR_TMO)
 	{
-            epicsSnprintf(pasynUser->errorMessage,pasynUser->errorMessageSize,
-                          "%s read error %s", driver->resourceName, errMsg(driver->vi, err).c_str());
-            closeConnection(pasynUser,driver,"Read error");
-            return asynError;		
+		epicsSnprintf(pasynUser->errorMessage, pasynUser->errorMessageSize,
+			"%s read error %s", driver->resourceName, errMsg(driver->vi, err).c_str());
+		closeConnection(pasynUser, driver, "Read error");
+		return asynError;
+	}
+	if (actual > 0)
+	{
+		err = viSetAttribute(driver->vi, VI_ATTR_TMO_VALUE, VI_TMO_IMMEDIATE);
+		VI_CHECK_ERROR("set timeout", err);
+		err = viRead(driver->vi, (ViBuf)(data + actual), maxchars - actual, &actualex);
+		if (err < 0 && err != VI_ERROR_TMO)
+		{
+			epicsSnprintf(pasynUser->errorMessage, pasynUser->errorMessageSize,
+				"%s read error %s", driver->resourceName, errMsg(driver->vi, err).c_str());
+			closeConnection(pasynUser, driver, "Read error");
+			return asynError;
+		}
+		actual += actualex;
+		err = VI_SUCCESS; // remove expected VI_ERROR_TMO
 	}
 	switch(err)
 	{

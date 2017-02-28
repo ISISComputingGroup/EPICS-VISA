@@ -38,8 +38,10 @@ typedef struct {
 	ViSession          vi;    ///< current session handle
 	bool               connected;
     char              *resourceName; ///< VISA resource name
-    unsigned long      nRead;  ///< number of bytes read from this resource name
-    unsigned long      nWritten; ///< number of bytes written to this resource
+    unsigned long      nReadBytes;  ///< number of bytes read from this resource name
+    unsigned long      nWriteBytes; ///< number of bytes written to this resource
+    unsigned long      nReadCalls;  ///< number of read calls from this resource name
+    unsigned long      nWriteCalls; ///< number of written calls to this resource
 	double 			   timeout;
 	bool               isSerial;	    
     asynInterface      common;
@@ -353,8 +355,10 @@ asynCommonReport(void *drvPvt, FILE *fp, int details)
                                                 (driver->connected ? "C" : "Disc"));
     }
     if (details >= 2) {
-        fprintf(fp, "    Characters written: %lu\n", driver->nWritten);
-        fprintf(fp, "       Characters read: %lu\n", driver->nRead);
+        fprintf(fp, "    Characters written: %lu\n", driver->nWriteBytes);
+        fprintf(fp, "       Characters read: %lu\n", driver->nReadBytes);
+        fprintf(fp, "      write operations: %lu\n", driver->nWriteCalls);
+        fprintf(fp, "       read operations: %lu\n", driver->nReadCalls);
         fprintf(fp, "      Is serial device: %c\n", (driver->isSerial ? 'Y' : 'N'));
     }
 }
@@ -413,6 +417,7 @@ connectIt(void *drvPvt, asynUser *pasynUser)
 	}
 	ViUInt16 intf_type;
 	char intf_name[256];
+	intf_name[0] = '\0';
 	err = viGetAttribute(driver->vi, VI_ATTR_INTF_INST_NAME, intf_name);
 	VI_CHECK_ERROR("intf_name", err);
 	err = viGetAttribute(driver->vi, VI_ATTR_INTF_TYPE, &intf_type);
@@ -444,7 +449,8 @@ connectIt(void *drvPvt, asynUser *pasynUser)
 	//	VI_ATTR_WR_BUF_OPER_MODE    -> VI_FLUSH_ON_ACCESS
 	
     asynPrint(pasynUser, ASYN_TRACE_FLOW,
-                          "Opened connection to \"%s\" (%s)\n", driver->resourceName, (intf_name != NULL ? intf_name : ""));
+                          "Opened connection to \"%s\" (%s) isSerial=%c\n", driver->resourceName, 
+						  intf_name, (driver->isSerial ? 'Y' : 'N'));
     driver->connected = true;
     return asynSuccess;
 }
@@ -490,6 +496,7 @@ static asynStatus writeIt(void *drvPvt, asynUser *pasynUser,
                           "%s disconnected:", driver->resourceName);
             return asynError;
 	}
+	++(driver->nWriteCalls);
     if (numchars == 0)
 	{
         return asynSuccess;
@@ -508,7 +515,7 @@ static asynStatus writeIt(void *drvPvt, asynUser *pasynUser,
 		}
 		VI_CHECK_ERROR("set timeout", err);
 	unsigned long actual = 0;
-	err = viWrite(driver->vi, (ViBuf)data, numchars, &actual);
+	err = viWrite(driver->vi, (ViBuf)data, static_cast<ViUInt32>(numchars), &actual);
 	if ( err == VI_ERROR_TMO )
 	{
 		timedout = true;
@@ -520,7 +527,7 @@ static asynStatus writeIt(void *drvPvt, asynUser *pasynUser,
             closeConnection(pasynUser,driver,"Write error");
             return asynError;		
 	}
-    driver->nWritten += actual;
+    driver->nWriteBytes += actual;
     *nbytesTransfered += actual;
     numchars -= actual;
     data += actual;
@@ -551,6 +558,7 @@ static asynStatus readIt(void *drvPvt, asynUser *pasynUser,
                           "%s disconnected:", driver->resourceName);
             return asynError;
 	}
+	++(driver->nReadCalls);
     if (maxchars <= 0) {
         epicsSnprintf(pasynUser->errorMessage,pasynUser->errorMessageSize,
                   "%s maxchars %d. Why <=0?",driver->resourceName,(int)maxchars);
@@ -598,7 +606,7 @@ static asynStatus readIt(void *drvPvt, asynUser *pasynUser,
 	{
 		err = viSetAttribute(driver->vi, VI_ATTR_TMO_VALUE, VI_TMO_IMMEDIATE);
 		VI_CHECK_ERROR("set timeout", err);
-		err = viRead(driver->vi, (ViBuf)(data + actual), maxchars - actual, &actualex);
+		err = viRead(driver->vi, reinterpret_cast<ViBuf>(data + actual), static_cast<ViUInt32>(maxchars - actual), &actualex);
 		if (err < 0 && err != VI_ERROR_TMO)
 		{
 			epicsSnprintf(pasynUser->errorMessage, pasynUser->errorMessageSize,
@@ -634,7 +642,7 @@ static asynStatus readIt(void *drvPvt, asynUser *pasynUser,
 	{
         asynPrintIO(pasynUser, ASYN_TRACEIO_DRIVER, data, maxchars,
                    "%s read %d\n", driver->resourceName, actual);
-        driver->nRead += (unsigned long)actual;
+        driver->nReadBytes += (unsigned long)actual;
     }
 //	else
 //	{
@@ -726,7 +734,7 @@ drvAsynVISAPortConfigure(const char *portName,
 	driver->isSerial = false;
 	if (viOpenDefaultRM(&(driver->defaultRM)) != VI_SUCCESS)
 	{
-		printf("drvAsynVISAPortConfigure: viOpenDefaultRM failed for port %s\n", driver->portName);
+		printf("drvAsynVISAPortConfigure: viOpenDefaultRM failed for port \"%s\"\n", driver->portName);
 		driverCleanup(driver);
 		return -1;
 	}

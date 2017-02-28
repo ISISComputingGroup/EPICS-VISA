@@ -640,7 +640,7 @@ static asynStatus readIt(void *drvPvt, asynUser *pasynUser,
 	}
 	if (actual > 0)
 	{
-        asynPrintIO(pasynUser, ASYN_TRACEIO_DRIVER, data, maxchars,
+        asynPrintIO(pasynUser, ASYN_TRACEIO_DRIVER, data, actual,
                    "%s read %d\n", driver->resourceName, actual);
         driver->nReadBytes += (unsigned long)actual;
     }

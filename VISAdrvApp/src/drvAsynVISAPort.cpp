@@ -502,7 +502,6 @@ static asynStatus writeIt(void *drvPvt, asynUser *pasynUser,
         return asynSuccess;
 	}
 	ViStatus err;
-	// a timeout of zero means different things on read and write, so always need to set
 	// always need to set timeout as use immediate as part of read
         driver->timeout = pasynUser->timeout;
 		if (driver->timeout == 0)
@@ -552,6 +551,8 @@ static asynStatus readIt(void *drvPvt, asynUser *pasynUser,
     assert(driver);
     asynPrint(pasynUser, ASYN_TRACE_FLOW,
               "%s read.\n", driver->resourceName);
+    *nbytesTransfered = 0;
+    if (gotEom) *gotEom = 0;
 	if (!driver->connected)
 	{
             epicsSnprintf(pasynUser->errorMessage,pasynUser->errorMessageSize,
@@ -566,8 +567,6 @@ static asynStatus readIt(void *drvPvt, asynUser *pasynUser,
     }
 	unsigned long actual = 0, actualex = 0;
 	ViStatus err;
-    *nbytesTransfered = 0;
-    if (gotEom) *gotEom = 0;
 //	ViUInt32 avail = 0;
 	// should we only ever try and read one character?
 //	if (driver->isSerial)
@@ -581,13 +580,12 @@ static asynStatus readIt(void *drvPvt, asynUser *pasynUser,
 //		}
 //	}
 
-// try and read one character, if we don;t time out try and rad more with an imemdiate timeout
-// we always need to set timeout as we resetr to immediate below
+// try and read one character, if we don't time out try and read more with an imemdiate timeout
+// we always need to set timeout as we reset to immediate below
 	driver->timeout = pasynUser->timeout;
-	// a timeout of zero means different things on read and write, so always need to set
 	if (driver->timeout == 0)
 	{
-		err = viSetAttribute(driver->vi, VI_ATTR_TMO_VALUE, VI_TMO_INFINITE);
+		err = viSetAttribute(driver->vi, VI_ATTR_TMO_VALUE, VI_TMO_IMMEDIATE);
 	}
 	else
 	{

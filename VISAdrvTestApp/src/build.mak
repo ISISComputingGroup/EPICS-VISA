@@ -23,11 +23,8 @@ $(APPNAME)_DBD += stream.dbd
 
 # Add all the support libraries needed by this IOC
 $(APPNAME)_LIBS += stream pcre VISAdrv asyn
-ifneq ($(findstring windows,$(EPICS_HOST_ARCH)),)
-$(APPNAME)_LIBS += visa64
-else
-$(APPNAME)_LIBS += visa32
-endif
+include $(TOP)/visa_lib.mak
+
 # VISAdrvTest_registerRecordDeviceDriver.cpp derives from VISAdrvTest.dbd
 $(APPNAME)_SRCS += $(APPNAME)_registerRecordDeviceDriver.cpp
 

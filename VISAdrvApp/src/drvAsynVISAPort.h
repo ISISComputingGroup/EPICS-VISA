@@ -12,7 +12,10 @@ extern "C" {
 #endif  /* __cplusplus */
 
 epicsShareFunc int drvAsynVISAPortConfigure(const char *portName,
-                                            const char *resourceName);
+                         const char *resourceName, 
+                         unsigned int priority,
+                         int noAutoConnect,
+                         int noProcessEos);
 
 #ifdef __cplusplus
 }

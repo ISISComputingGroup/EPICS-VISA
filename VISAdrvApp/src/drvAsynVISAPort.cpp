@@ -43,7 +43,9 @@ typedef struct {
     unsigned long      nReadCalls;  ///< number of read calls from this resource name
     unsigned long      nWriteCalls; ///< number of written calls to this resource
 	double 			   timeout;
-	bool               isSerial;	    
+	bool               isSerial;
+    ViAttrState		   readIntTimeout; ///< internal read timeout (ms), used for second part of two stage read
+    ViUInt8            termCharIn;     ///< read termination character, if specified improves read efficiency
     asynInterface      common;
     asynInterface      option;
     asynInterface      octet;
@@ -347,19 +349,29 @@ static void
 asynCommonReport(void *drvPvt, FILE *fp, int details)
 {
     visaDriver_t *driver = (visaDriver_t*)drvPvt;
-
+    char termChar[16]; // bit of space for encoding an escape sequence
     assert(driver);
     if (details >= 1) {
         fprintf(fp, "    Port %s: %sonnected\n",
                                                 driver->resourceName,
                                                 (driver->connected ? "C" : "Disc"));
     }
+	if (driver->termCharIn != 0)
+	{
+	    epicsStrnEscapedFromRaw(termChar, sizeof(termChar), reinterpret_cast<const char*>(&(driver->termCharIn)), 1);
+	}
+	else
+	{
+		strncpy(termChar, "<none>", sizeof(termChar));
+	}
     if (details >= 2) {
         fprintf(fp, "    Characters written: %lu\n", driver->nWriteBytes);
         fprintf(fp, "       Characters read: %lu\n", driver->nReadBytes);
         fprintf(fp, "      write operations: %lu\n", driver->nWriteCalls);
         fprintf(fp, "       read operations: %lu\n", driver->nReadCalls);
         fprintf(fp, "      Is serial device: %c\n", (driver->isSerial ? 'Y' : 'N'));
+        fprintf(fp, "Input Termination char: %s\n", termChar);
+        fprintf(fp, "Internal read tmo (ms): %d\n", (int)driver->readIntTimeout);
     }
 }
 
@@ -425,7 +437,7 @@ connectIt(void *drvPvt, asynUser *pasynUser)
 	
 	if (intf_type == VI_INTF_ASRL) // is it a serial device?
 	{
-		// disable read/write exit on serial specific termination character
+		// disable read/write exit on serial specific termination character, we use VI_ATTR_TERMCHAR_EN
 		err = viSetAttribute(driver->vi, VI_ATTR_ASRL_END_IN, VI_ASRL_END_NONE);
 	    VI_CHECK_ERROR("ASRL_END_IN", err);
 		err = viSetAttribute(driver->vi, VI_ATTR_ASRL_END_OUT, VI_ASRL_END_NONE);
@@ -436,9 +448,19 @@ connectIt(void *drvPvt, asynUser *pasynUser)
 	{
 		driver->isSerial = false;		
 	}
-	// disable read/write command exit on termination character VI_ATTR_TERMCHAR in general
-	err = viSetAttribute(driver->vi, VI_ATTR_TERMCHAR_EN, VI_FALSE);
-	VI_CHECK_ERROR("termchar", err);
+	if (driver->termCharIn != 0)
+	{
+		// tell VISA to terminate a read early when this character is seen
+	    err = viSetAttribute(driver->vi, VI_ATTR_TERMCHAR, driver->termCharIn);
+	    VI_CHECK_ERROR("termchar", err);
+	    err = viSetAttribute(driver->vi, VI_ATTR_TERMCHAR_EN, VI_TRUE);
+	}
+	else
+	{
+	    // disable read/write command exit on termination character VI_ATTR_TERMCHAR in general
+	    err = viSetAttribute(driver->vi, VI_ATTR_TERMCHAR_EN, VI_FALSE);
+	}
+	VI_CHECK_ERROR("termchar_en", err);
 
     // these are the defaults, need to change?
 //	viSetAttribute(driver->vi, VI_ATTR_SEND_END_EN, VI_TRUE);
@@ -521,9 +543,9 @@ static asynStatus writeIt(void *drvPvt, asynUser *pasynUser,
 	}
 	else if ( err != VI_SUCCESS )
 	{
+            closeConnection(pasynUser,driver,"Write error");
             epicsSnprintf(pasynUser->errorMessage,pasynUser->errorMessageSize,
                           "%s write error %s", driver->resourceName, errMsg(driver->vi, err).c_str());
-            closeConnection(pasynUser,driver,"Write error");
             return asynError;		
 	}
     driver->nWriteBytes += actual;
@@ -595,21 +617,21 @@ static asynStatus readIt(void *drvPvt, asynUser *pasynUser,
 	err = viRead(driver->vi, (ViBuf)data, 1, &actual);
 	if (err < 0 && err != VI_ERROR_TMO)
 	{
+		closeConnection(pasynUser, driver, "Read error");
 		epicsSnprintf(pasynUser->errorMessage, pasynUser->errorMessageSize,
 			"%s read error %s", driver->resourceName, errMsg(driver->vi, err).c_str());
-		closeConnection(pasynUser, driver, "Read error");
 		return asynError;
 	}
 	if (actual > 0)
 	{
-		err = viSetAttribute(driver->vi, VI_ATTR_TMO_VALUE, VI_TMO_IMMEDIATE);
+		err = viSetAttribute(driver->vi, VI_ATTR_TMO_VALUE, driver->readIntTimeout);
 		VI_CHECK_ERROR("set timeout", err);
 		err = viRead(driver->vi, reinterpret_cast<ViBuf>(data + actual), static_cast<ViUInt32>(maxchars - actual), &actualex);
 		if (err < 0 && err != VI_ERROR_TMO)
 		{
+			closeConnection(pasynUser, driver, "Read error");
 			epicsSnprintf(pasynUser->errorMessage, pasynUser->errorMessageSize,
 				"%s read error %s", driver->resourceName, errMsg(driver->vi, err).c_str());
-			closeConnection(pasynUser, driver, "Read error");
 			return asynError;
 		}
 		actual += actualex;
@@ -696,7 +718,9 @@ drvAsynVISAPortConfigure(const char *portName,
                          const char *resourceName, 
                          unsigned int priority,
                          int noAutoConnect,
-                         int noProcessEos)
+                         int noProcessEos,
+                         int readIntTmoMs,
+                         const char* termCharIn)
 {
     visaDriver_t *driver;
     asynStatus status;
@@ -728,8 +752,21 @@ drvAsynVISAPortConfigure(const char *portName,
     driver->connected = false;
     driver->resourceName = epicsStrDup(resourceName);
     driver->portName = epicsStrDup(portName);
-	driver->timeout = -0.1;
-	driver->isSerial = false;
+    driver->timeout = -0.1;
+    driver->isSerial = false;
+    driver->readIntTimeout = (readIntTmoMs == 0 ? VI_TMO_IMMEDIATE : readIntTmoMs);
+    if (termCharIn != NULL)
+    {
+        if (strlen(termCharIn) > 1)
+		{
+			printf("drvAsynVISAPortConfigure: termChar must be single character\n");
+		}
+	    driver->termCharIn = termCharIn[0];
+	}
+	else
+	{
+	    driver->termCharIn = 0;
+	}
 	if (viOpenDefaultRM(&(driver->defaultRM)) != VI_SUCCESS)
 	{
 		printf("drvAsynVISAPortConfigure: viOpenDefaultRM failed for port \"%s\"\n", driver->portName);
@@ -757,7 +794,7 @@ drvAsynVISAPortConfigure(const char *portName,
         driverCleanup(driver);
         return -1;
     }
-	status = pasynManager->registerInterface(driver->portName,&driver->common);
+    status = pasynManager->registerInterface(driver->portName,&driver->common);
     if(status != asynSuccess) {
         printf("drvAsynVISAPortConfigure: Can't register common.\n");
         driverCleanup(driver);
@@ -782,7 +819,7 @@ drvAsynVISAPortConfigure(const char *portName,
     status = pasynManager->connectDevice(driver->pasynUser,driver->portName,-1);
     if(status != asynSuccess) {
         printf("drvAsynVISAPortConfigure: connectDevice failed %s\n",driver->pasynUser->errorMessage);
-		visaCleanup(driver);
+        visaCleanup(driver);
         driverCleanup(driver);
         return -1;
     }
@@ -802,16 +839,22 @@ static const iocshArg drvAsynVISAPortConfigureArg1 = { "visa resource",iocshArgS
 static const iocshArg drvAsynVISAPortConfigureArg2 = { "priority",iocshArgInt};
 static const iocshArg drvAsynVISAPortConfigureArg3 = { "noAutoConnect",iocshArgInt};
 static const iocshArg drvAsynVISAPortConfigureArg4 = { "noProcessEos",iocshArgInt};
+static const iocshArg drvAsynVISAPortConfigureArg5 = { "readIntTmoMs",iocshArgInt};
+static const iocshArg drvAsynVISAPortConfigureArg6 = { "termCharIn",iocshArgString};
+
 static const iocshArg *drvAsynVISAPortConfigureArgs[] = {
     &drvAsynVISAPortConfigureArg0, &drvAsynVISAPortConfigureArg1, &drvAsynVISAPortConfigureArg2,
-	&drvAsynVISAPortConfigureArg3, &drvAsynVISAPortConfigureArg4
+    &drvAsynVISAPortConfigureArg3, &drvAsynVISAPortConfigureArg4, &drvAsynVISAPortConfigureArg5,
+    &drvAsynVISAPortConfigureArg6
 };
+
 static const iocshFuncDef drvAsynVISAPortConfigureFuncDef =
                       {"drvAsynVISAPortConfigure",sizeof(drvAsynVISAPortConfigureArgs)/sizeof(iocshArg*),drvAsynVISAPortConfigureArgs};
 
 static void drvAsynVISAPortConfigureCallFunc(const iocshArgBuf *args)
 {
-    drvAsynVISAPortConfigure(args[0].sval, args[1].sval, args[2].ival, args[3].ival, args[4].ival);
+    drvAsynVISAPortConfigure(args[0].sval, args[1].sval, args[2].ival, args[3].ival,
+                             args[4].ival, args[5].ival, args[6].sval);
 }
 
 extern "C"

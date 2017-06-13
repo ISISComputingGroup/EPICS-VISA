@@ -755,17 +755,17 @@ drvAsynVISAPortConfigure(const char *portName,
     driver->timeout = -0.1;
     driver->isSerial = false;
     driver->readIntTimeout = (readIntTmoMs == 0 ? VI_TMO_IMMEDIATE : readIntTmoMs);
+    driver->termCharIn = 0;
     if (termCharIn != NULL)
     {
-        if (strlen(termCharIn) > 1)
+        if (strlen(termCharIn) == 1)
 		{
-			printf("drvAsynVISAPortConfigure: termChar must be single character\n");
+            driver->termCharIn = termCharIn[0];
 		}
-	    driver->termCharIn = termCharIn[0];
-	}
-	else
-	{
-	    driver->termCharIn = 0;
+		else
+		{
+            printf("drvAsynVISAPortConfigure: termChar must be single character - not set\n");
+		}
 	}
 	if (viOpenDefaultRM(&(driver->defaultRM)) != VI_SUCCESS)
 	{

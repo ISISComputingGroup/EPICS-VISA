@@ -603,12 +603,15 @@ static asynStatus readIt(void *drvPvt, asynUser *pasynUser,
 //		}
 //	}
 
-// try and read one character, if we don't time out try and read more with an imemdiate timeout
+// try and read one character, if we don't time out try and read more with an immediate timeout
 // we always need to set timeout as we reset to immediate below
+// we don't use driver->readIntTimeout
+// whatever out timeout, we can get called with a timeout of 0 by higher levels to flush the input queue 
+// prior to a write, hence we need to map to  readIntTimeout  to avois problems on GPIB-ENET
 	driver->timeout = pasynUser->timeout;
 	if (driver->timeout == 0)
 	{
-		err = viSetAttribute(driver->vi, VI_ATTR_TMO_VALUE, VI_TMO_IMMEDIATE);
+		err = viSetAttribute(driver->vi, VI_ATTR_TMO_VALUE, driver->readIntTimeout);
 	}
 	else
 	{
@@ -618,7 +621,7 @@ static asynStatus readIt(void *drvPvt, asynUser *pasynUser,
 	err = viRead(driver->vi, (ViBuf)data, 1, &actual);
 	if (err < 0 && err != VI_ERROR_TMO)
 	{
-		closeConnection(pasynUser, driver, "Read error");
+		closeConnection(pasynUser, driver, "Read error (stage 1)");
 		epicsSnprintf(pasynUser->errorMessage, pasynUser->errorMessageSize,
 			"%s read error %s", driver->resourceName, errMsg(driver->vi, err).c_str());
 		return asynError;
@@ -633,7 +636,7 @@ static asynStatus readIt(void *drvPvt, asynUser *pasynUser,
 		err = viRead(driver->vi, reinterpret_cast<ViBuf>(data + actual), static_cast<ViUInt32>(maxchars - actual), &actualex);
 		if (err < 0 && err != VI_ERROR_TMO)
 		{
-			closeConnection(pasynUser, driver, "Read error");
+			closeConnection(pasynUser, driver, "Read error (stage 2)");
 			epicsSnprintf(pasynUser->errorMessage, pasynUser->errorMessageSize,
 				"%s read error %s", driver->resourceName, errMsg(driver->vi, err).c_str());
 			return asynError;
@@ -779,12 +782,12 @@ drvAsynVISAPortConfigure(const char *portName,
     driver->termCharIn = 0;
     if (termCharIn != NULL)
     {
-        if (strlen(termCharIn) == 1)
+		char termChar[16];
+	    epicsStrnRawFromEscaped(termChar, sizeof(termChar), termCharIn, strlen(termCharIn));
+        if (strlen(termChar) == 1)
 		{
-			char termChar[16];
-			driver->termCharIn = termCharIn[0];
-	        epicsStrnEscapedFromRaw(termChar, sizeof(termChar), termCharIn, 1);
-            printf("drvAsynVISAPortConfigure: using term char hint \"%s\" (0x%x)\n", termChar, (unsigned)driver->termCharIn);
+			driver->termCharIn = termChar[0];
+            printf("drvAsynVISAPortConfigure: using term char hint \"%s\" (0x%x)\n", termCharIn, (unsigned)driver->termCharIn);
 		}
 		else
 		{

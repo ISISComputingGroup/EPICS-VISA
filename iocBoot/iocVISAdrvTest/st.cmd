@@ -14,10 +14,19 @@ cd "${TOP}"
 dbLoadDatabase "dbd/VISAdrvTest.dbd"
 VISAdrvTest_registerRecordDeviceDriver pdbbase
 
-drvAsynVISAPortConfigure("visa","visa://ndximat/GPIB0::3::INSTR")
+# remote via visa client-server
+#drvAsynVISAPortConfigure("visa","visa://ndximat/GPIB0::3::INSTR")
+# mapped locally
+drvAsynVISAPortConfigure("visa","GPIB0::3::INSTR")
 
 asynOctetSetOutputEos("visa",0,"\\r")
 asynOctetSetInputEos("visa",0,"\\r")
+
+# trace flow
+#asynSetTraceMask("visa",0,0x11) 
+# trace I/O
+#asynSetTraceMask("visa",0,0x9) 
+#asynSetTraceIOMask("visa",0,0x2)
 
 epicsEnvSet ("STREAM_PROTOCOL_PATH", "$(TOP)/data")
 

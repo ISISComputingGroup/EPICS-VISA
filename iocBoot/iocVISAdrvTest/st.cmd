@@ -14,10 +14,10 @@ cd "${TOP}"
 dbLoadDatabase "dbd/VISAdrvTest.dbd"
 VISAdrvTest_registerRecordDeviceDriver pdbbase
 
-# remote via visa client-server
-#drvAsynVISAPortConfigure("visa","visa://ndximat/GPIB0::3::INSTR")
-# mapped locally
-drvAsynVISAPortConfigure("visa","GPIB0::3::INSTR")
+## after device is mapped in NI MAX under devices and interfaces, and right click "scan for instruments"
+drvAsynVISAPortConfigure("visa", "GPIB0::3::INSTR")
+## instead if device is on another machine and you add the computer as a remote system in NI MAX
+#drvAsynVISAPortConfigure("visa", "visa://ndximat/GPIB0::3::INSTR")
 
 asynOctetSetOutputEos("visa",0,"\\r")
 asynOctetSetInputEos("visa",0,"\\r")

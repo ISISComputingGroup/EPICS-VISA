@@ -44,6 +44,7 @@ typedef struct {
     unsigned long      nWriteCalls; ///< number of written calls to this resource
 	double 			   timeout;
 	bool               isSerial;
+	bool               EOMOnEveryRead;  ///< signal ASYN_EOM_END on all reads > 0 bytes. Useful for e.g. GPIB-ENET with no terminator
     ViAttrState		   readIntTimeout; ///< internal read timeout (ms), used for second part of two stage read
     ViUInt8            termCharIn;     ///< read termination character, if specified improves read efficiency
     asynInterface      common;
@@ -450,6 +451,16 @@ connectIt(void *drvPvt, asynUser *pasynUser)
 	{
 		driver->isSerial = false;		
 	}
+	if (intf_type == VI_INTF_GPIB)
+	{
+		// we should make these configurable
+		err = viSetAttribute(driver->vi, VI_ATTR_GPIB_READDR_EN, VI_TRUE);
+	    VI_CHECK_ERROR("VI_ATTR_GPIB_READDR_EN", err);
+		err = viSetAttribute(driver->vi, VI_ATTR_GPIB_UNADDR_EN, VI_TRUE);
+	    VI_CHECK_ERROR("VI_ATTR_GPIB_UNADDR_EN", err);
+		err = viSetAttribute(driver->vi, VI_ATTR_SEND_END_EN, VI_TRUE);
+	    VI_CHECK_ERROR("VI_ATTR_SEND_END_EN", err);
+	}
 	if (driver->termCharIn != 0)
 	{
 		// tell VISA to terminate a read early when this character is seen
@@ -501,17 +512,19 @@ asynCommonDisconnect(void *drvPvt, asynUser *pasynUser)
 }
 
 static asynStatus writeIt(void *drvPvt, asynUser *pasynUser,
-    const char *data, size_t numchars,size_t *nbytesTransfered)
+    const char *data, size_t numchars, size_t *nbytesTransfered)
 {
     visaDriver_t *driver = (visaDriver_t*)drvPvt;
     asynStatus status = asynSuccess;
 	bool timedout = false;
+	epicsTimeStamp epicsTS1, epicsTS2;
 
     assert(driver);
     asynPrint(pasynUser, ASYN_TRACE_FLOW,
               "%s write.\n", driver->resourceName);
     asynPrintIO(pasynUser, ASYN_TRACEIO_DRIVER, data, numchars,
                 "%s write %lu\n", driver->resourceName, (unsigned long)numchars);
+	epicsTimeGetCurrent(&epicsTS1);
     *nbytesTransfered = 0;
 	if (!driver->connected)
 	{
@@ -557,23 +570,27 @@ static asynStatus writeIt(void *drvPvt, asynUser *pasynUser,
 	{
 		status = asynTimeout;
 	}
+	epicsTimeGetCurrent(&epicsTS2);
     asynPrint(pasynUser, ASYN_TRACE_FLOW,
               "wrote %lu to %s, return %s.\n", (unsigned long)*nbytesTransfered,
                                                driver->resourceName,
                                                pasynManager->strStatus(status));
+	asynPrint(pasynUser, ASYN_TRACE_FLOW, "%s Write took %f timeout was %f\n", driver->resourceName, epicsTimeDiffInSeconds(&epicsTS2, &epicsTS1), pasynUser->timeout);
     return status;
 }
 
 static asynStatus readIt(void *drvPvt, asynUser *pasynUser,
-    char *data, size_t maxchars,size_t *nbytesTransfered,int *gotEom)
+    char *data, size_t maxchars, size_t *nbytesTransfered, int *gotEom)
 {
     visaDriver_t *driver = (visaDriver_t*)drvPvt;
     int reason = 0;
     asynStatus status = asynSuccess;
+	epicsTimeStamp epicsTS1, epicsTS2;
 
     assert(driver);
     asynPrint(pasynUser, ASYN_TRACE_FLOW,
               "%s read.\n", driver->resourceName);
+	epicsTimeGetCurrent(&epicsTS1);
     *nbytesTransfered = 0;
     if (gotEom) *gotEom = 0;
 	if (!driver->connected)
@@ -650,13 +667,14 @@ static asynStatus readIt(void *drvPvt, asynUser *pasynUser,
 	switch(err)
 	{
 		case VI_SUCCESS:
-// I think this code means end of message, which we don't know
-//			reason |= ASYN_EOM_END;
+			if (driver->EOMOnEveryRead && actual > 0)
+			{
+				reason |= ASYN_EOM_END;
+			}
 		    break;
 			
 		case VI_SUCCESS_TERM_CHAR:
-// we only use term char as a hint, so let upper layers decide properly
-//			reason |= ASYN_EOM_EOS;  
+			reason |= ASYN_EOM_EOS;  
 			break;
 			
 		case VI_SUCCESS_MAX_CNT:
@@ -690,16 +708,20 @@ static asynStatus readIt(void *drvPvt, asynUser *pasynUser,
     else
         reason |= ASYN_EOM_CNT;
     if (gotEom) *gotEom = reason;
+	epicsTimeGetCurrent(&epicsTS2);
     asynPrint(pasynUser, ASYN_TRACE_FLOW,
               "read %lu from %s, return %s.\n", (unsigned long)*nbytesTransfered,
                                                driver->resourceName,
                                                pasynManager->strStatus(status));
+	asynPrint(pasynUser, ASYN_TRACE_FLOW, "%s Read took %f timeout was %f\n", driver->resourceName, epicsTimeDiffInSeconds(&epicsTS2, &epicsTS1), pasynUser->timeout);
     return status;
 }
 
 static asynStatus
 flushIt(void *drvPvt,asynUser *pasynUser)
 {
+	epicsTimeStamp epicsTS1, epicsTS2;
+	epicsTimeGetCurrent(&epicsTS1);
     visaDriver_t *driver = (visaDriver_t*)drvPvt;
     assert(driver);
 	if (!driver->connected)
@@ -711,7 +733,9 @@ flushIt(void *drvPvt,asynUser *pasynUser)
 	//	ViStatus err = viFlush(driver->vi, VI_WRITE_BUF | VI_IO_OUT_BUF);
 	ViStatus err = viFlush(driver->vi, VI_READ_BUF_DISCARD | VI_IO_IN_BUF_DISCARD);
 	VI_CHECK_ERROR("flush", err);
+	epicsTimeGetCurrent(&epicsTS2);
     asynPrint(pasynUser, ASYN_TRACE_FLOW, "%s flush\n", driver->resourceName);
+	asynPrint(pasynUser, ASYN_TRACE_FLOW, "%s flush took %f\n", driver->resourceName, epicsTimeDiffInSeconds(&epicsTS2, &epicsTS1));
     return asynSuccess;
 }
 
@@ -736,7 +760,8 @@ drvAsynVISAPortConfigure(const char *portName,
                          int noAutoConnect,
                          int noProcessEos,
                          int readIntTmoMs,
-                         const char* termCharIn)
+                         const char* termCharIn,
+						 int EOMOnEveryRead)
 {
     visaDriver_t *driver;
     asynStatus status;
@@ -770,6 +795,7 @@ drvAsynVISAPortConfigure(const char *portName,
     driver->portName = epicsStrDup(portName);
     driver->timeout = -0.1;
     driver->isSerial = false;
+	driver->EOMOnEveryRead = (EOMOnEveryRead != 0);
 	if (readIntTmoMs != 0)
 	{
         printf("drvAsynVISAPortConfigure: using internal read timeout of %d ms\n", readIntTmoMs);
@@ -868,11 +894,13 @@ static const iocshArg drvAsynVISAPortConfigureArg3 = { "noAutoConnect",iocshArgI
 static const iocshArg drvAsynVISAPortConfigureArg4 = { "noProcessEos",iocshArgInt};
 static const iocshArg drvAsynVISAPortConfigureArg5 = { "readIntTmoMs",iocshArgInt};
 static const iocshArg drvAsynVISAPortConfigureArg6 = { "termCharIn",iocshArgString};
+static const iocshArg drvAsynVISAPortConfigureArg7 = { "EOMOnEveryRead",iocshArgInt};
 
 static const iocshArg *drvAsynVISAPortConfigureArgs[] = {
     &drvAsynVISAPortConfigureArg0, &drvAsynVISAPortConfigureArg1, &drvAsynVISAPortConfigureArg2,
     &drvAsynVISAPortConfigureArg3, &drvAsynVISAPortConfigureArg4, &drvAsynVISAPortConfigureArg5,
-    &drvAsynVISAPortConfigureArg6
+    &drvAsynVISAPortConfigureArg6, &drvAsynVISAPortConfigureArg7
+
 };
 
 static const iocshFuncDef drvAsynVISAPortConfigureFuncDef =
@@ -881,7 +909,7 @@ static const iocshFuncDef drvAsynVISAPortConfigureFuncDef =
 static void drvAsynVISAPortConfigureCallFunc(const iocshArgBuf *args)
 {
     drvAsynVISAPortConfigure(args[0].sval, args[1].sval, args[2].ival, args[3].ival,
-                             args[4].ival, args[5].ival, args[6].sval);
+                             args[4].ival, args[5].ival, args[6].sval, args[7].ival);
 }
 
 extern "C"

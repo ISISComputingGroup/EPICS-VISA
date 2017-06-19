@@ -44,7 +44,10 @@ typedef struct {
     unsigned long      nWriteCalls; ///< number of written calls to this resource
 	double 			   timeout;
 	bool               isSerial;
-	bool               EOMOnEveryRead;  ///< signal ASYN_EOM_END on all reads > 0 bytes. Useful for e.g. GPIB-ENET with no terminator
+	bool               isGPIB;
+	bool               SuccessIsEOM;   ///< signal ASYN_EOM_END on all reads > 0 bytes and VI_SUCCESS returned. 
+	                                   ///< Devices like GPIB signal END and this is reflected in VI_SECCESS. Serial
+									   ///< devices return VI_SUCCESS if read < requested, which may not be the true end 
     ViAttrState		   readIntTimeout; ///< internal read timeout (ms), used for second part of two stage read
     ViUInt8            termCharIn;     ///< read termination character, if specified improves read efficiency
     asynInterface      common;
@@ -373,6 +376,7 @@ asynCommonReport(void *drvPvt, FILE *fp, int details)
         fprintf(fp, "      write operations: %lu\n", driver->nWriteCalls);
         fprintf(fp, "       read operations: %lu\n", driver->nReadCalls);
         fprintf(fp, "      Is serial device: %c\n", (driver->isSerial ? 'Y' : 'N'));
+        fprintf(fp, "      Is GPIB device: %c\n", (driver->isGPIB ? 'Y' : 'N'));
         fprintf(fp, "  Input term char hint: \"%s\" (0x%x)\n", termChar, (unsigned)driver->termCharIn);
         fprintf(fp, "Internal read tmo (ms): %d\n", (driver->readIntTimeout == VI_TMO_IMMEDIATE ? 0 : (int)driver->readIntTimeout));
     }
@@ -453,13 +457,19 @@ connectIt(void *drvPvt, asynUser *pasynUser)
 	}
 	if (intf_type == VI_INTF_GPIB)
 	{
+		driver->isGPIB = true;
 		// we should make these configurable
 		err = viSetAttribute(driver->vi, VI_ATTR_GPIB_READDR_EN, VI_TRUE);
 	    VI_CHECK_ERROR("VI_ATTR_GPIB_READDR_EN", err);
-		err = viSetAttribute(driver->vi, VI_ATTR_GPIB_UNADDR_EN, VI_TRUE);
-	    VI_CHECK_ERROR("VI_ATTR_GPIB_UNADDR_EN", err);
+// The LabVIEW driver set this to VI_TRUE (default is VI_FALSE) but causes problems for stress rig if we set it
+//		err = viSetAttribute(driver->vi, VI_ATTR_GPIB_UNADDR_EN, VI_TRUE);
+//	    VI_CHECK_ERROR("VI_ATTR_GPIB_UNADDR_EN", err);
 		err = viSetAttribute(driver->vi, VI_ATTR_SEND_END_EN, VI_TRUE);
 	    VI_CHECK_ERROR("VI_ATTR_SEND_END_EN", err);
+	}
+	else
+	{
+		driver->isGPIB = false;		
 	}
 	if (driver->termCharIn != 0)
 	{
@@ -484,8 +494,8 @@ connectIt(void *drvPvt, asynUser *pasynUser)
 	//	VI_ATTR_WR_BUF_OPER_MODE    -> VI_FLUSH_ON_ACCESS
 	
     asynPrint(pasynUser, ASYN_TRACE_FLOW,
-                          "Opened connection to \"%s\" (%s) isSerial=%c\n", driver->resourceName, 
-						  intf_name, (driver->isSerial ? 'Y' : 'N'));
+                          "Opened connection to \"%s\" (%s) isSerial=%c isGPIB=%c\n", driver->resourceName, 
+						  intf_name, (driver->isSerial ? 'Y' : 'N'), (driver->isGPIB ? 'Y' : 'N'));
     driver->connected = true;
     return asynSuccess;
 }
@@ -575,7 +585,8 @@ static asynStatus writeIt(void *drvPvt, asynUser *pasynUser,
               "wrote %lu to %s, return %s.\n", (unsigned long)*nbytesTransfered,
                                                driver->resourceName,
                                                pasynManager->strStatus(status));
-	asynPrint(pasynUser, ASYN_TRACE_FLOW, "%s Write took %f timeout was %f\n", driver->resourceName, epicsTimeDiffInSeconds(&epicsTS2, &epicsTS1), pasynUser->timeout);
+	asynPrint(pasynUser, ASYN_TRACE_FLOW, "%s Write took %f timeout was %f\n", 
+	          driver->resourceName, epicsTimeDiffInSeconds(&epicsTS2, &epicsTS1), pasynUser->timeout);
     return status;
 }
 
@@ -643,7 +654,7 @@ static asynStatus readIt(void *drvPvt, asynUser *pasynUser,
 			"%s read error %s", driver->resourceName, errMsg(driver->vi, err).c_str());
 		return asynError;
 	}
-	if (actual > 0 && err != VI_SUCCESS_TERM_CHAR)
+	if (actual > 0 && err == VI_SUCCESS_MAX_CNT)
 	{
 		// read anything else that might be there, originally this used VI_TMO_IMMEDIATE
 		// but we had a few timeout issues with GPIP over ethernet so this is now 
@@ -659,15 +670,19 @@ static asynStatus readIt(void *drvPvt, asynUser *pasynUser,
 			return asynError;
 		}
 		actual += actualex;
+		// a VI_SUCCESS on GPIB means we got the EOM, on serial it doesn't necessarily mean this
+		// so on timeout don't convert to VI_SUCCESS but to something that will get ignored in the
+		// next case statement
+		// remove expected VI_ERROR_TMO, but leave VI_SUCCESS_TERM_CHAR etc.
 	    if (err < 0)
 		{
-		    err = VI_SUCCESS; // remove expected VI_ERROR_TMO, but leave VI_SUCCESS_TERM_CHAR etc.
+		    err = VI_WARN_UNKNOWN_STATUS;
 		}
 	}
 	switch(err)
 	{
 		case VI_SUCCESS:
-			if (driver->EOMOnEveryRead && actual > 0)
+			if (driver->SuccessIsEOM && actual > 0)
 			{
 				reason |= ASYN_EOM_END;
 			}
@@ -713,7 +728,8 @@ static asynStatus readIt(void *drvPvt, asynUser *pasynUser,
               "read %lu from %s, return %s.\n", (unsigned long)*nbytesTransfered,
                                                driver->resourceName,
                                                pasynManager->strStatus(status));
-	asynPrint(pasynUser, ASYN_TRACE_FLOW, "%s Read took %f timeout was %f\n", driver->resourceName, epicsTimeDiffInSeconds(&epicsTS2, &epicsTS1), pasynUser->timeout);
+	asynPrint(pasynUser, ASYN_TRACE_FLOW, "%s Read took %f timeout was %f\n", driver->resourceName, 
+	          epicsTimeDiffInSeconds(&epicsTS2, &epicsTS1), pasynUser->timeout);
     return status;
 }
 
@@ -735,7 +751,8 @@ flushIt(void *drvPvt,asynUser *pasynUser)
 	VI_CHECK_ERROR("flush", err);
 	epicsTimeGetCurrent(&epicsTS2);
     asynPrint(pasynUser, ASYN_TRACE_FLOW, "%s flush\n", driver->resourceName);
-	asynPrint(pasynUser, ASYN_TRACE_FLOW, "%s flush took %f\n", driver->resourceName, epicsTimeDiffInSeconds(&epicsTS2, &epicsTS1));
+	asynPrint(pasynUser, ASYN_TRACE_FLOW, "%s flush took %f\n", driver->resourceName, 
+	          epicsTimeDiffInSeconds(&epicsTS2, &epicsTS1));
     return asynSuccess;
 }
 
@@ -761,7 +778,7 @@ drvAsynVISAPortConfigure(const char *portName,
                          int noProcessEos,
                          int readIntTmoMs,
                          const char* termCharIn,
-						 int EOMOnEveryRead)
+						 int SuccessIsEOM)
 {
     visaDriver_t *driver;
     asynStatus status;
@@ -795,7 +812,8 @@ drvAsynVISAPortConfigure(const char *portName,
     driver->portName = epicsStrDup(portName);
     driver->timeout = -0.1;
     driver->isSerial = false;
-	driver->EOMOnEveryRead = (EOMOnEveryRead != 0);
+    driver->isGPIB = false;
+	driver->SuccessIsEOM = (SuccessIsEOM != 0);
 	if (readIntTmoMs != 0)
 	{
         printf("drvAsynVISAPortConfigure: using internal read timeout of %d ms\n", readIntTmoMs);
@@ -894,7 +912,7 @@ static const iocshArg drvAsynVISAPortConfigureArg3 = { "noAutoConnect",iocshArgI
 static const iocshArg drvAsynVISAPortConfigureArg4 = { "noProcessEos",iocshArgInt};
 static const iocshArg drvAsynVISAPortConfigureArg5 = { "readIntTmoMs",iocshArgInt};
 static const iocshArg drvAsynVISAPortConfigureArg6 = { "termCharIn",iocshArgString};
-static const iocshArg drvAsynVISAPortConfigureArg7 = { "EOMOnEveryRead",iocshArgInt};
+static const iocshArg drvAsynVISAPortConfigureArg7 = { "SuccessIsEOM",iocshArgInt};
 
 static const iocshArg *drvAsynVISAPortConfigureArgs[] = {
     &drvAsynVISAPortConfigureArg0, &drvAsynVISAPortConfigureArg1, &drvAsynVISAPortConfigureArg2,

@@ -45,8 +45,8 @@ typedef struct {
 	double 			   timeout;
 	bool               isSerial;
 	bool               isGPIB;
-	bool               SuccessIsEOM;   ///< signal ASYN_EOM_END on all reads > 0 bytes and VI_SUCCESS returned. 
-	                                   ///< Devices like GPIB signal END and this is reflected in VI_SECCESS. Serial
+	bool               deviceSendsEOM; ///< signal ASYN_EOM_END on all reads > 0 bytes and VI_SUCCESS returned. 
+	                                   ///< Devices like GPIB signal END and this is reflected in VI_SUCCESS. Serial
 									   ///< devices return VI_SUCCESS if read < requested, which may not be the true end 
     ViAttrState		   readIntTimeout; ///< internal read timeout (ms), used for second part of two stage read
     ViUInt8            termCharIn;     ///< read termination character, if specified improves read efficiency
@@ -376,7 +376,8 @@ asynCommonReport(void *drvPvt, FILE *fp, int details)
         fprintf(fp, "      write operations: %lu\n", driver->nWriteCalls);
         fprintf(fp, "       read operations: %lu\n", driver->nReadCalls);
         fprintf(fp, "      Is serial device: %c\n", (driver->isSerial ? 'Y' : 'N'));
-        fprintf(fp, "      Is GPIB device: %c\n", (driver->isGPIB ? 'Y' : 'N'));
+        fprintf(fp, "        Is GPIB device: %c\n", (driver->isGPIB ? 'Y' : 'N'));
+        fprintf(fp, "      Device sends EOM: %c\n", (driver->deviceSendsEOM ? 'Y' : 'N'));
         fprintf(fp, "  Input term char hint: \"%s\" (0x%x)\n", termChar, (unsigned)driver->termCharIn);
         fprintf(fp, "Internal read tmo (ms): %d\n", (driver->readIntTimeout == VI_TMO_IMMEDIATE ? 0 : (int)driver->readIntTimeout));
     }
@@ -646,43 +647,57 @@ static asynStatus readIt(void *drvPvt, asynUser *pasynUser,
 		err = viSetAttribute(driver->vi, VI_ATTR_TMO_VALUE, static_cast<int>(driver->timeout * 1000.0));
 	}
 	VI_CHECK_ERROR("set timeout", err);
-	err = viRead(driver->vi, (ViBuf)data, 1, &actual);
-	if (err < 0 && err != VI_ERROR_TMO)
+	if (driver->deviceSendsEOM)
 	{
-		closeConnection(pasynUser, driver, "Read error (stage 1)");
-		epicsSnprintf(pasynUser->errorMessage, pasynUser->errorMessageSize,
-			"%s read error %s", driver->resourceName, errMsg(driver->vi, err).c_str());
-		return asynError;
-	}
-	if (actual > 0 && err == VI_SUCCESS_MAX_CNT)
-	{
-		// read anything else that might be there, originally this used VI_TMO_IMMEDIATE
-		// but we had a few timeout issues with GPIP over ethernet so this is now 
-		// configurable to a small finite value
-		err = viSetAttribute(driver->vi, VI_ATTR_TMO_VALUE, driver->readIntTimeout);
-		VI_CHECK_ERROR("set timeout", err);
-		err = viRead(driver->vi, reinterpret_cast<ViBuf>(data + actual), static_cast<ViUInt32>(maxchars - actual), &actualex);
+	    err = viRead(driver->vi, (ViBuf)data, static_cast<ViUInt32>(maxchars), &actual);
 		if (err < 0 && err != VI_ERROR_TMO)
 		{
-			closeConnection(pasynUser, driver, "Read error (stage 2)");
+			closeConnection(pasynUser, driver, "Read error");
 			epicsSnprintf(pasynUser->errorMessage, pasynUser->errorMessageSize,
 				"%s read error %s", driver->resourceName, errMsg(driver->vi, err).c_str());
 			return asynError;
 		}
-		actual += actualex;
-		// a VI_SUCCESS on GPIB means we got the EOM, on serial it doesn't necessarily mean this
-		// so on timeout don't convert to VI_SUCCESS but to something that will get ignored in the
-		// next case statement
-		// remove expected VI_ERROR_TMO, but leave VI_SUCCESS_TERM_CHAR etc.
-	    if (err < 0)
+	}
+	else
+	{
+		err = viRead(driver->vi, (ViBuf)data, 1, &actual);
+		if (err < 0 && err != VI_ERROR_TMO)
 		{
-		    err = VI_WARN_UNKNOWN_STATUS;
+			closeConnection(pasynUser, driver, "Read error (stage 1)");
+			epicsSnprintf(pasynUser->errorMessage, pasynUser->errorMessageSize,
+				"%s read error %s", driver->resourceName, errMsg(driver->vi, err).c_str());
+			return asynError;
+		}
+		if (actual > 0 && err == VI_SUCCESS_MAX_CNT)
+		{
+			// read anything else that might be there, originally this used VI_TMO_IMMEDIATE
+			// but we had a few timeout issues with GPIP over ethernet so this is now 
+			// configurable to a small finite value
+			err = viSetAttribute(driver->vi, VI_ATTR_TMO_VALUE, driver->readIntTimeout);
+			VI_CHECK_ERROR("set timeout", err);
+			err = viRead(driver->vi, reinterpret_cast<ViBuf>(data + actual), static_cast<ViUInt32>(maxchars - actual), &actualex);
+			if (err < 0 && err != VI_ERROR_TMO)
+			{
+				closeConnection(pasynUser, driver, "Read error (stage 2)");
+				epicsSnprintf(pasynUser->errorMessage, pasynUser->errorMessageSize,
+					"%s read error %s", driver->resourceName, errMsg(driver->vi, err).c_str());
+				return asynError;
+			}
+			actual += actualex;
+			// a VI_SUCCESS on GPIB means we got the EOM, on serial it doesn't necessarily mean this
+			// so on timeout don't convert to VI_SUCCESS but to something that will get ignored in the
+			// next case statement
+			// remove expected VI_ERROR_TMO, but leave VI_SUCCESS_TERM_CHAR etc.
+			if (err < 0)
+			{
+				err = VI_WARN_UNKNOWN_STATUS;
+			}
 		}
 	}
 	switch(err)
 	{
 		case VI_SUCCESS:
-			if (driver->SuccessIsEOM && actual > 0)
+			if (driver->deviceSendsEOM && actual > 0)
 			{
 				reason |= ASYN_EOM_END;
 			}
@@ -778,7 +793,7 @@ drvAsynVISAPortConfigure(const char *portName,
                          int noProcessEos,
                          int readIntTmoMs,
                          const char* termCharIn,
-						 int SuccessIsEOM)
+						 int deviceSendsEOM)
 {
     visaDriver_t *driver;
     asynStatus status;
@@ -813,7 +828,7 @@ drvAsynVISAPortConfigure(const char *portName,
     driver->timeout = -0.1;
     driver->isSerial = false;
     driver->isGPIB = false;
-	driver->SuccessIsEOM = (SuccessIsEOM != 0);
+	driver->deviceSendsEOM = (deviceSendsEOM != 0);
 	if (readIntTmoMs != 0)
 	{
         printf("drvAsynVISAPortConfigure: using internal read timeout of %d ms\n", readIntTmoMs);
@@ -824,7 +839,7 @@ drvAsynVISAPortConfigure(const char *portName,
         driver->readIntTimeout = VI_TMO_IMMEDIATE;
 	}
     driver->termCharIn = 0;
-    if (termCharIn != NULL)
+    if (termCharIn != NULL && *termCharIn != '\0')
     {
 		char termChar[16];
 	    epicsStrnRawFromEscaped(termChar, sizeof(termChar), termCharIn, strlen(termCharIn));
@@ -912,7 +927,7 @@ static const iocshArg drvAsynVISAPortConfigureArg3 = { "noAutoConnect",iocshArgI
 static const iocshArg drvAsynVISAPortConfigureArg4 = { "noProcessEos",iocshArgInt};
 static const iocshArg drvAsynVISAPortConfigureArg5 = { "readIntTmoMs",iocshArgInt};
 static const iocshArg drvAsynVISAPortConfigureArg6 = { "termCharIn",iocshArgString};
-static const iocshArg drvAsynVISAPortConfigureArg7 = { "SuccessIsEOM",iocshArgInt};
+static const iocshArg drvAsynVISAPortConfigureArg7 = { "deviceSendsEOM",iocshArgInt};
 
 static const iocshArg *drvAsynVISAPortConfigureArgs[] = {
     &drvAsynVISAPortConfigureArg0, &drvAsynVISAPortConfigureArg1, &drvAsynVISAPortConfigureArg2,

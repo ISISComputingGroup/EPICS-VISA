@@ -48,7 +48,7 @@ typedef struct {
 	bool               deviceSendsEOM; ///< signal ASYN_EOM_END on all reads > 0 bytes and VI_SUCCESS returned. 
 	                                   ///< Devices like GPIB signal END and this is reflected in VI_SUCCESS. Serial
 									   ///< devices return VI_SUCCESS if read < requested, which may not be the true end 
-    ViAttrState		   readIntTimeout; ///< internal read timeout (ms), used for second part of two stage read
+    int		   			readIntTimeout; ///< internal read timeout (ms), used for second part of two stage read
     ViUInt8            termCharIn;     ///< read termination character, if specified improves read efficiency
     asynInterface      common;
     asynInterface      option;
@@ -486,6 +486,9 @@ connectIt(void *drvPvt, asynUser *pasynUser)
 	}
 	VI_CHECK_ERROR("termchar_en", err);
 
+	err = viClear(driver->vi);
+	VI_CHECK_ERROR("viClear", err);
+	
     // these are the defaults, need to change?
 //	viSetAttribute(driver->vi, VI_ATTR_SEND_END_EN, VI_TRUE);
 //	viSetAttribute(driver->vi, VI_ATTR_SUPPRESS_END_EN, VI_FALSE);
@@ -598,6 +601,8 @@ static asynStatus readIt(void *drvPvt, asynUser *pasynUser,
     int reason = 0;
     asynStatus status = asynSuccess;
 	epicsTimeStamp epicsTS1, epicsTS2;
+	unsigned long actual = 0, actualex = 0;
+	ViStatus err;
 
     assert(driver);
     asynPrint(pasynUser, ASYN_TRACE_FLOW,
@@ -617,8 +622,24 @@ static asynStatus readIt(void *drvPvt, asynUser *pasynUser,
                   "%s maxchars %d. Why <=0?",driver->resourceName,(int)maxchars);
         return asynError;
     }
-	unsigned long actual = 0, actualex = 0;
-	ViStatus err;
+	driver->timeout = pasynUser->timeout;
+	// this is an optimisation - stream device does a zero timeout read to clear the input buffer
+	if (driver->timeout == 0 && driver->readIntTimeout < 0)
+	{
+	    err = viFlush(driver->vi, VI_IO_IN_BUF_DISCARD);
+		// this seems to error on GPIB?
+//		VI_CHECK_ERROR("viFlush", err);
+        data[0] = 0; // already checked maxchars > 0 above
+		status = asynTimeout;
+		epicsTimeGetCurrent(&epicsTS2);
+		asynPrint(pasynUser, ASYN_TRACE_FLOW,
+			"read %lu from %s, return %s.\n", (unsigned long)*nbytesTransfered,
+			driver->resourceName,
+			pasynManager->strStatus(status));
+		asynPrint(pasynUser, ASYN_TRACE_FLOW, "%s Read took %f timeout was %f\n", driver->resourceName,
+			epicsTimeDiffInSeconds(&epicsTS2, &epicsTS1), pasynUser->timeout);
+		return asynTimeout;
+	}		
 //	ViUInt32 avail = 0;
 	// should we only ever try and read one character?
 //	if (driver->isSerial)
@@ -637,7 +658,6 @@ static asynStatus readIt(void *drvPvt, asynUser *pasynUser,
 // we don't use driver->readIntTimeout
 // whatever out timeout, we can get called with a timeout of 0 by higher levels to flush the input queue 
 // prior to a write, hence we need to map to  readIntTimeout  to avois problems on GPIB-ENET
-	driver->timeout = pasynUser->timeout;
 	if (driver->timeout == 0)
 	{
 		err = viSetAttribute(driver->vi, VI_ATTR_TMO_VALUE, driver->readIntTimeout);
@@ -651,7 +671,9 @@ static asynStatus readIt(void *drvPvt, asynUser *pasynUser,
 	if (driver->deviceSendsEOM)
 	{
 	    err = viRead(driver->vi, (ViBuf)data, static_cast<ViUInt32>(maxchars), &actual);
-		if (err < 0 && err != VI_ERROR_TMO)
+		// we have had issues with GPIB-ENET and immediate timeout, it returns bus error sometimes
+		// so don't close connectuion here, but ultimately return asynError via later logic
+		if (err < 0 && err != VI_ERROR_TMO && driver->timeout != 0 && driver->readIntTimeout != VI_TMO_IMMEDIATE)
 		{
 			closeConnection(pasynUser, driver, "Read error");
 			epicsSnprintf(pasynUser->errorMessage, pasynUser->errorMessageSize,
@@ -662,7 +684,9 @@ static asynStatus readIt(void *drvPvt, asynUser *pasynUser,
 	else
 	{
 		err = viRead(driver->vi, (ViBuf)data, 1, &actual);
-		if (err < 0 && err != VI_ERROR_TMO)
+		// we have had issues with GPIB-ENET and immediate timeout, returns bus error sometimes
+		// so don't close connectuion here, but ultimately return asynError via later logic
+		if (err < 0 && err != VI_ERROR_TMO && driver->timeout != 0 && driver->readIntTimeout != VI_TMO_IMMEDIATE)
 		{
 			closeConnection(pasynUser, driver, "Read error (stage 1)");
 			epicsSnprintf(pasynUser->errorMessage, pasynUser->errorMessageSize,
@@ -717,6 +741,12 @@ static asynStatus readIt(void *drvPvt, asynUser *pasynUser,
 			break;
 			
 		default:
+			if (err < 0)
+			{
+				status = asynError;
+				epicsSnprintf(pasynUser->errorMessage, pasynUser->errorMessageSize,
+					"%s read error %s", driver->resourceName, errMsg(driver->vi, err).c_str());
+			}
 			break;
 	}
 	if (actual > 0)
@@ -762,8 +792,8 @@ flushIt(void *drvPvt,asynUser *pasynUser)
 			"%s disconnected:", driver->resourceName);
 		return asynError;
 	}
-	//	ViStatus err = viFlush(driver->vi, VI_WRITE_BUF | VI_IO_OUT_BUF);
-	ViStatus err = viFlush(driver->vi, VI_READ_BUF_DISCARD | VI_IO_IN_BUF_DISCARD);
+	//	ViStatus err = viFlush(driver->vi, VI_IO_OUT_BUF);
+	ViStatus err = viFlush(driver->vi, VI_IO_IN_BUF_DISCARD);
 	VI_CHECK_ERROR("flush", err);
 	epicsTimeGetCurrent(&epicsTS2);
     asynPrint(pasynUser, ASYN_TRACE_FLOW, "%s flush\n", driver->resourceName);

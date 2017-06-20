@@ -647,6 +647,7 @@ static asynStatus readIt(void *drvPvt, asynUser *pasynUser,
 		err = viSetAttribute(driver->vi, VI_ATTR_TMO_VALUE, static_cast<int>(driver->timeout * 1000.0));
 	}
 	VI_CHECK_ERROR("set timeout", err);
+	// if the device sends an EOM the read will terminate then rather than on timeout
 	if (driver->deviceSendsEOM)
 	{
 	    err = viRead(driver->vi, (ViBuf)data, static_cast<ViUInt32>(maxchars), &actual);

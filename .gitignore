@@ -13,3 +13,5 @@ runIOC.sh
 relPaths.sh
 data/
 .project
+/doc/
+*.tags

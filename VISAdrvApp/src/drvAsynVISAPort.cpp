@@ -1,3 +1,5 @@
+/// @file drvAsynVISAPort.cpp ASYN driver for National Instruments VISA 
+
 #include <string.h>
 #include <ctype.h>
 #include <stdio.h>
@@ -35,21 +37,19 @@ typedef struct {
     asynUser          *pasynUser; 
     char              *portName;  ///< asyn port name
 	ViSession 		   defaultRM;
-	ViSession          vi;    ///< current session handle
-	bool               connected;
-    char              *resourceName; ///< VISA resource name
+	ViSession          vi;    ///< VISA session handle
+	bool               connected;  ///< are we currently connected 
+    char              *resourceName; ///< VISA resource name session connected to 
     unsigned long      nReadBytes;  ///< number of bytes read from this resource name
     unsigned long      nWriteBytes; ///< number of bytes written to this resource
     unsigned long      nReadCalls;  ///< number of read calls from this resource name
     unsigned long      nWriteCalls; ///< number of written calls to this resource
-	double 			   timeout;
-	bool               isSerial;
-	bool               isGPIB;
-	bool               deviceSendsEOM; ///< signal ASYN_EOM_END on all reads > 0 bytes and VI_SUCCESS returned. 
-	                                   ///< Devices like GPIB signal END and this is reflected in VI_SUCCESS. Serial
-									   ///< devices return VI_SUCCESS if read < requested, which may not be the true end 
-    int		   			readIntTimeout; ///< internal read timeout (ms), used for second part of two stage read
-    ViUInt8            termCharIn;     ///< read termination character, if specified improves read efficiency
+	double 			   timeout;    ///< requested timeout for current operation
+	bool               isSerial;    ///< are we an RS232 style serial device?
+	bool               isGPIB;      ///< are we a GPIB device?
+	bool               deviceSendsEOM; ///< @copydoc drvAsynVISAPortConfigureArg7
+    int		   		   readIntTimeout; ///< @copydoc drvAsynVISAPortConfigureArg5
+    ViUInt8            termCharIn;     ///< @copydoc drvAsynVISAPortConfigureArg6
     asynInterface      common;
     asynInterface      option;
     asynInterface      octet;
@@ -71,9 +71,9 @@ static std::string errMsg(ViSession vi, ViStatus err)
         return asynError; \
     }
 
-/*
- * asynOption methods
- */
+///
+/// asynOption interface - get options
+///
 static asynStatus
 getOption(void *drvPvt, asynUser *pasynUser,
                               const char *key, char *val, int valSize)
@@ -181,6 +181,9 @@ getOption(void *drvPvt, asynUser *pasynUser,
     return asynSuccess;
 }
 
+///
+/// asynOption interface - set options
+///
 static asynStatus
 setOption(void *drvPvt, asynUser *pasynUser, const char *key, const char *val)
 {
@@ -347,10 +350,7 @@ closeConnection(asynUser *pasynUser, visaDriver_t *driver, const char* reason)
 }
 
 
-/*Beginning of asynCommon methods*/
-/*
- * Report link parameters
- */
+/// asynCommon interface - Report link parameters
 static void
 asynCommonReport(void *drvPvt, FILE *fp, int details)
 {
@@ -410,10 +410,8 @@ driverCleanup(visaDriver_t *driver)
         free(driver);
     }
 }
-/*
- * Create a link
-*/
 
+/// create a link
 static asynStatus
 connectIt(void *drvPvt, asynUser *pasynUser)
 {
@@ -525,6 +523,7 @@ asynCommonDisconnect(void *drvPvt, asynUser *pasynUser)
     return closeConnection(pasynUser,driver,"Disconnect request");
 }
 
+/// write values to device
 static asynStatus writeIt(void *drvPvt, asynUser *pasynUser,
     const char *data, size_t numchars, size_t *nbytesTransfered)
 {
@@ -594,6 +593,7 @@ static asynStatus writeIt(void *drvPvt, asynUser *pasynUser,
     return status;
 }
 
+/// read values from device
 static asynStatus readIt(void *drvPvt, asynUser *pasynUser,
     char *data, size_t maxchars, size_t *nbytesTransfered, int *gotEom)
 {
@@ -779,6 +779,7 @@ static asynStatus readIt(void *drvPvt, asynUser *pasynUser,
     return status;
 }
 
+/// flush device
 static asynStatus
 flushIt(void *drvPvt,asynUser *pasynUser)
 {
@@ -813,9 +814,16 @@ static const struct asynCommon asynCommonMethods = {
     asynCommonDisconnect
 };
 
-/*
- * Configure and register an IP socket from a hostInfo string
- */
+
+/// Create a VISA device.
+/// @param[in] portName @copydoc drvAsynVISAPortConfigureArg0
+/// @param[in] resourceName @copydoc drvAsynVISAPortConfigureArg1
+/// @param[in] priority @copydoc drvAsynVISAPortConfigureArg2
+/// @param[in] noAutoConnect @copydoc drvAsynVISAPortConfigureArg3
+/// @param[in] noProcessEos @copydoc drvAsynVISAPortConfigureArg4
+/// @param[in] readIntTmoMs @copydoc drvAsynVISAPortConfigureArg5
+/// @param[in] termCharIn @copydoc drvAsynVISAPortConfigureArg6
+/// @param[in] deviceSendsEOM @copydoc drvAsynVISAPortConfigureArg7
 epicsShareFunc int
 drvAsynVISAPortConfigure(const char *portName,
                          const char *resourceName, 
@@ -951,13 +959,34 @@ drvAsynVISAPortConfigure(const char *portName,
 /*
  * IOC shell command registration
  */
-static const iocshArg drvAsynVISAPortConfigureArg0 = { "port name",iocshArgString};
-static const iocshArg drvAsynVISAPortConfigureArg1 = { "visa resource",iocshArgString};
+
+/// A name for the asyn driver instance we will create e.g. "L0" 
+static const iocshArg drvAsynVISAPortConfigureArg0 = { "portName",iocshArgString}; 
+/// VISA resource name to connect to e.g. "GPIB0::3::INSTR" or "COM10"
+static const iocshArg drvAsynVISAPortConfigureArg1 = { "resourceName",iocshArgString};
+/// Driver priority 
 static const iocshArg drvAsynVISAPortConfigureArg2 = { "priority",iocshArgInt};
+/// Should the driver automatically connect to the device (0=yes) 
 static const iocshArg drvAsynVISAPortConfigureArg3 = { "noAutoConnect",iocshArgInt};
+/// Should the driver interpose layer be called for EOS (termination) character processing (0=yes)
+/// If you have no termination character specified to asyn, then passing 1 (=no) may improve efficiency 
 static const iocshArg drvAsynVISAPortConfigureArg4 = { "noProcessEos",iocshArgInt};
+/// internal read timeout (ms) used instead of a zero timeout immediate read. Stream device will use such
+/// a timeout to flush the input buffer prior to a write, also the driver may use it internally to check for bytes.
+/// If you get problems with 0 as this value, try either a small positive number, or if you set it to a 
+/// negative number then any read call with zero timeout will be replaced with a viFlush() call to clear the input buffer.
+/// Such an assumption is valid for stream device, not necessarily for other drivers. Note that for GPIB/ENET we found
+/// that such zero timeout reads of no data took much longer than normal reads, hence the option to skip them
+/// via a negative timeout.   
 static const iocshArg drvAsynVISAPortConfigureArg5 = { "readIntTmoMs",iocshArgInt};
+/// read termination character, this is purely to improve read efficiency and is independent of any characters
+/// specified at the asyn or stream device later. It allows a read to terminate early without waiting for a timeout,
+/// if the calling layer is stream device then it will still decide whether it has all the correct characters or not.
 static const iocshArg drvAsynVISAPortConfigureArg6 = { "termCharIn",iocshArgString};
+/// Indicates that the device signals an "end of message". If this is true, then the driver can assume that 
+/// a VI_SUCCESS call translate to ASYN_EOM_END and this will stop a further call from Stream device if there are
+/// no termination characters to otherwise know all output has been received. 
+/// GPIB devices usually signal END, RS232 serial devices do not and you need to look for a termination character instead etc.  
 static const iocshArg drvAsynVISAPortConfigureArg7 = { "deviceSendsEOM",iocshArgInt};
 
 static const iocshArg *drvAsynVISAPortConfigureArgs[] = {

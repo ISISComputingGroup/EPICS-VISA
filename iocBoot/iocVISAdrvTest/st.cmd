@@ -1,3 +1,5 @@
+## @file st.cmd Example VISAdrv program
+
 #!../../bin/windows-x64/VISAdrvTest
 
 ## You may have to change VISAdrvTest to something else
@@ -19,8 +21,8 @@ drvAsynVISAPortConfigure("visa", "GPIB0::3::INSTR")
 ## instead if device is on another machine and you add the computer as a remote system in NI MAX
 #drvAsynVISAPortConfigure("visa", "visa://ndximat/GPIB0::3::INSTR")
 
-asynOctetSetOutputEos("visa",0,"\\r")
-asynOctetSetInputEos("visa",0,"\\r")
+asynOctetSetOutputEos("visa",0,"\n")
+asynOctetSetInputEos("visa",0,"\n")
 
 # trace flow
 #asynSetTraceMask("visa",0,0x11) 

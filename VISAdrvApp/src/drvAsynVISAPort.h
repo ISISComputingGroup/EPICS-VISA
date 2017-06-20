@@ -1,6 +1,4 @@
-/**********************************************************************
-* Asyn device support using VISA           *
-**********************************************************************/
+/// @file drvAsynVISAPort.h ASYN driver for National Instruments VISA 
 
 #ifndef DRVASYNVISAPORT_H
 #define DRVASYNVISAPORT_H

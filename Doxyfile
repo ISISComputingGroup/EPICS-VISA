@@ -1,0 +1,86 @@
+# Doxyfile 1.8.5
+
+# This file describes the settings to be used by the documentation system
+# doxygen (www.doxygen.org) for a project.
+#
+# All text after a double hash (##) is considered a comment and is placed in
+# front of the TAG it is preceding.
+#
+# All text after a single hash (#) is considered a comment and will be ignored.
+# The format is:
+# TAG = value [value, ...]
+# For lists, items can also be appended using:
+# TAG += value [value, ...]
+# Values that contain spaces should be placed between quotes (\" \").
+
+@INCLUDE_PATH = $(KIT_ROOT)/doxygen
+@INCLUDE = doxycommon.cfg
+
+#---------------------------------------------------------------------------
+# Project related configuration options
+#---------------------------------------------------------------------------
+
+# The PROJECT_NAME tag is a single word (or a sequence of words surrounded by
+# double-quotes, unless you are using Doxywizard) that should identify the
+# project for which the documentation is generated. This name is used in the
+# title of most generated pages and in a few other places.
+# The default value is: My Project.
+
+PROJECT_NAME           = VISAdrv
+
+# Using the PROJECT_BRIEF tag one can provide an optional one line description
+# for a project that appears at the top of each page and should give viewer a
+# quick idea about the purpose of the project. Keep the description short.
+
+PROJECT_BRIEF          = "ASYN driver for National Instruments VISA"
+
+# The INPUT tag is used to specify the files and/or directories that contain
+# documented source files. You may enter file names like myfile.cpp or
+# directories like /usr/src/myproject. Separate the files or directories with
+# spaces.
+# Note: If this tag is empty the current directory is searched.
+
+# ISIS: list your IOC/module "src", "db" and "iocBoot" directories
+
+INPUT                  = . \
+                         VISAdrvApp/src \
+						 VISAdrvTestApp/src
+						 
+					
+# The EXAMPLE_PATH tag can be used to specify one or more files or directories
+# that contain example code fragments that are included (see the \include
+# command).
+
+EXAMPLE_PATH           = . \
+                         doc \
+                         iocBoot/iocVISAdrvTest \
+                         VISAdrvApp/Db \
+                         VISAdrvApp/src \
+                         VISAdrvTestApp/Db \
+                         VISAdrvTestApp/src
+
+# The TAGFILES tag can be used to specify one or more tag files. For each tag
+# file the location of the external documentation should be added. The format of
+# a tag file without this location is as follows:
+# TAGFILES = file1 file2 ...
+# Adding location for the tag files is done as follows:
+# TAGFILES = file1=loc1 "file2 = loc2" ...
+# where loc1 and loc2 can be relative or absolute paths or URLs. See the
+# section "Linking to external documentation" for more information about the use
+# of tag files.
+# Note: Each tag file must have an unique name (where the name does NOT include
+# the path). If a tag file is not located in the directory in which doxygen is
+# run, you must also specify the path to the tagfile here.
+
+# ISIS: this can be used for allowing an IOC to link to documentation for its support modules
+# ISIS: syntax is a little wierd - see the ISISDAE IOC for an example 
+TAGFILES               =
+
+# When a file name is specified after GENERATE_TAGFILE, doxygen will create a
+# tag file that is based on the input files it reads. See section "Linking to
+# external documentation" for more information about the usage of tag files.
+
+# ISIS: use the name format <iocname>_IOC.tags or <modulename>_SUPPORT.tags as appropriate 
+# ISIS: also use capitals except for .tags suffix
+
+GENERATE_TAGFILE       = VISADRV_SUPPORT.tags

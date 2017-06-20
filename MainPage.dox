@@ -1,0 +1,22 @@
+<HTML>
+/** @mainpage VISAdrv (EPICS ASYN driver for National Instruments VISA)
+
+VISAdrv is an <A HREF="http://www.aps.anl.gov/epics/">EPICS</A> support module allowing access
+to VISA devices from asyn, it is similar in functionality ands usage to drvAsynSerialPortConfigure()
+
+Typically you would create an asyn port using drvAsynVISAPortConfigure() and then use EPICS Stream device to 
+send commands and interpret results. See the @link st.cmd IOC startup file @endlink for example usage.
+
+To add this into your program you need to:
+
+<UL>
+<LI> Add VISAdrv.dbd to your DBD file list
+<LI> Add VISAdrv to your LIB list
+<LI> include   visa_lib.mak    to set the system library paths
+</UL>
+
+See @link build.mak @endlink
+
+*/
+
+</HTML>

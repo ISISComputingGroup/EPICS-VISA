@@ -576,16 +576,14 @@ static asynStatus writeIt(void *drvPvt, asynUser *pasynUser,
             return asynError;		
 	}
     driver->nWriteBytes += actual;
-    *nbytesTransfered += actual;
-    numchars -= actual;
-    data += actual;
+    *nbytesTransfered = actual;
 	if (timedout)
 	{
 		status = asynTimeout;
 	}
 	epicsTimeGetCurrent(&epicsTS2);
     asynPrint(pasynUser, ASYN_TRACE_FLOW,
-              "wrote %lu to %s, return %s.\n", (unsigned long)*nbytesTransfered,
+              "wrote %lu/%lu chars to %s, return %s.\n", (unsigned long)*nbytesTransfered, (unsigned long)numchars,
                                                driver->resourceName,
                                                pasynManager->strStatus(status));
 	asynPrint(pasynUser, ASYN_TRACE_FLOW, "%s Write took %f timeout was %f\n", 
@@ -626,7 +624,7 @@ static asynStatus readIt(void *drvPvt, asynUser *pasynUser,
 	// this is an optimisation - stream device does a zero timeout read to clear the input buffer
 	if (driver->timeout == 0 && driver->readIntTimeout < 0)
 	{
-	    err = viFlush(driver->vi, VI_IO_IN_BUF_DISCARD);
+//	    err = viFlush(driver->vi, VI_IO_IN_BUF_DISCARD);
 		// this seems to error on GPIB?
 //		VI_CHECK_ERROR("viFlush", err);
         data[0] = 0; // already checked maxchars > 0 above
@@ -673,7 +671,7 @@ static asynStatus readIt(void *drvPvt, asynUser *pasynUser,
 	    err = viRead(driver->vi, (ViBuf)data, static_cast<ViUInt32>(maxchars), &actual);
 		// we have had issues with GPIB-ENET and immediate timeout, it returns bus error sometimes
 		// so don't close connectuion here, but ultimately return asynError via later logic
-		if (err < 0 && err != VI_ERROR_TMO && driver->timeout != 0 && driver->readIntTimeout != VI_TMO_IMMEDIATE)
+		if (err < 0 && err != VI_ERROR_TMO && (driver->timeout != 0 || (driver->timeout == 0 && driver->readIntTimeout != VI_TMO_IMMEDIATE)) )
 		{
 			closeConnection(pasynUser, driver, "Read error");
 			epicsSnprintf(pasynUser->errorMessage, pasynUser->errorMessageSize,
@@ -686,7 +684,7 @@ static asynStatus readIt(void *drvPvt, asynUser *pasynUser,
 		err = viRead(driver->vi, (ViBuf)data, 1, &actual);
 		// we have had issues with GPIB-ENET and immediate timeout, returns bus error sometimes
 		// so don't close connectuion here, but ultimately return asynError via later logic
-		if (err < 0 && err != VI_ERROR_TMO && driver->timeout != 0 && driver->readIntTimeout != VI_TMO_IMMEDIATE)
+		if (err < 0 && err != VI_ERROR_TMO && (driver->timeout != 0 || (driver->timeout == 0 && driver->readIntTimeout != VI_TMO_IMMEDIATE)) )
 		{
 			closeConnection(pasynUser, driver, "Read error (stage 1)");
 			epicsSnprintf(pasynUser->errorMessage, pasynUser->errorMessageSize,
@@ -794,8 +792,8 @@ flushIt(void *drvPvt,asynUser *pasynUser)
 		return asynError;
 	}
 	//	ViStatus err = viFlush(driver->vi, VI_IO_OUT_BUF);
-	ViStatus err = viFlush(driver->vi, VI_IO_IN_BUF_DISCARD);
-	VI_CHECK_ERROR("flush", err);
+//	ViStatus err = viFlush(driver->vi, VI_IO_IN_BUF_DISCARD);
+//	VI_CHECK_ERROR("flush", err);
 	epicsTimeGetCurrent(&epicsTS2);
     asynPrint(pasynUser, ASYN_TRACE_FLOW, "%s flush\n", driver->resourceName);
 	asynPrint(pasynUser, ASYN_TRACE_FLOW, "%s flush took %f\n", driver->resourceName, 

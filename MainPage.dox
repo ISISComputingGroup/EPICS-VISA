@@ -1,0 +1,41 @@
+<HTML>
+/** @mainpage VISAdrv (EPICS ASYN driver for National Instruments VISA)
+
+VISAdrv is an <A HREF="http://www.aps.anl.gov/epics/">EPICS</A> support module allowing access
+to VISA devices from asyn, it is similar in functionality and usage to drvAsynSerialPortConfigure().
+You can use it to access devices such as the NI GPIB/ENET 100
+
+Typically you would create an asyn port using drvAsynVISAPortConfigure() and then use EPICS Stream device to 
+send commands and interpret results. See the @link st.cmd IOC startup file @endlink for example usage.
+
+To add this into your program you need to:
+
+<UL>
+<LI> Add VISAdrv.dbd to your DBD file list
+<LI> Add VISAdrv to your LIB list
+<LI> include   visa_lib.mak    to set the system library paths
+</UL>
+
+Then to configure the driver in the IOC at boot time (see iocsBoot/iocVISAdrvtest/st.cmd) use a command like:
+<PRE>
+    # local serial port (NI MAX name)
+    drvAsynVISAPortConfigure("L0", "ASRL5::INSTR")
+
+    # local serial port (alias)
+    drvAsynVISAPortConfigure("L0", "COM5")
+
+    # GPIB device added to local device list 
+    drvAsynVISAPortConfigure("L0", "GPIB0::3::INSTR")
+
+    # Remote System: GPIB device added to remote PC and served from there using NI VISA Server 
+    drvAsynVISAPortConfigure("L0", "visa://remotecomputer/GPIB0::3::INSTR")
+</PRE>
+
+where L0 is you asyn port name followed by the local or remote VISA name of your device (see NI Measurement and Automation explorer if you don't know the name)
+
+
+See @link build.mak @endlink
+
+*/
+
+</HTML>

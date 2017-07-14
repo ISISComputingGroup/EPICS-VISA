@@ -1,3 +1,5 @@
+## @file build.mak Makefile for VISADrvTest
+
 TOP=../..
 
 include $(TOP)/configure/CONFIG

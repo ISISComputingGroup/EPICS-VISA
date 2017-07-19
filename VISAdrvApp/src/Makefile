@@ -39,6 +39,7 @@ LIB_INSTALLS_WIN32 += $(VISALIB)/visa32.lib
 VISAdrv_SYS_LIBS_WIN32 += $(VISALIB)/visa32
 #BIN_INSTALLS_WIN32 += $(NIVISADIR)/Bin/*.dll
 endif
+VISAdrv_SYS_LIBS_Linux += visa
 
 #===========================
 

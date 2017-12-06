@@ -28,6 +28,7 @@ $(APPNAME)_LIBS += stream VISAdrv asyn
 ifdef PCRE
 $(APPNAME)_LIBS += pcre
 endif
+# this links the IOC against the system NI VISA libraries, which is needed for static EPICS builds
 include $(TOP)/visa_lib.mak
 
 # VISAdrvTest_registerRecordDeviceDriver.cpp derives from VISAdrvTest.dbd

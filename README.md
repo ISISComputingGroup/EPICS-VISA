@@ -19,7 +19,8 @@ You should also add the line
 
     include $(TOP)/visa_lib.mak
 
-To link against the system VISA library (this is only strictly needed for static builds)
+To link against the system NI VISA library (this is only strictly needed if EPICS is being built
+statically i.e. STATIC_BUILD=YES in e.g. CONFIG_SITE). See VISAdrvTestApp/src/build.mak for an example.
 
 
 Then to configure the driver in the IOC at boot time (see iocsBoot/iocVISAdrvtest/st.cmd) use a command like:

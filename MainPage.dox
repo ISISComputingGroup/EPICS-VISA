@@ -5,6 +5,12 @@ VISAdrv is an <A HREF="http://www.aps.anl.gov/epics/">EPICS</A> support module a
 to VISA devices from asyn, it is similar in functionality and usage to drvAsynSerialPortConfigure().
 You can use it to access devices such as the NI GPIB/ENET 100
 
+You will need to edit VISAdrvApp/src/Makefile and change NIVISADIR to point to the location of your
+National Instruments VISA installation
+
+To link against the system NI VISA library (this is only strictly needed if EPICS is being built
+statically i.e. STATIC_BUILD=YES in e.g. CONFIG_SITE). See VISAdrvTestApp/src/build.mak for an example.
+
 Typically you would create an asyn port using drvAsynVISAPortConfigure() and then use EPICS Stream device to 
 send commands and interpret results. See the @link st.cmd IOC startup file @endlink for example usage.
 
@@ -13,7 +19,7 @@ To add this into your program you need to:
 <UL>
 <LI> Add VISAdrv.dbd to your DBD file list
 <LI> Add VISAdrv to your LIB list
-<LI> include   visa_lib.mak    to set the system library paths
+<LI> include   visa_lib.mak    in your IOC makefile to set the system NI VISA library paths
 </UL>
 
 Then to configure the driver in the IOC at boot time (see iocsBoot/iocVISAdrvtest/st.cmd) use a command like:

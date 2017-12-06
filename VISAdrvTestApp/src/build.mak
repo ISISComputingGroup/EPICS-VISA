@@ -24,7 +24,10 @@ $(APPNAME)_DBD += VISAdrv.dbd
 $(APPNAME)_DBD += stream.dbd
 
 # Add all the support libraries needed by this IOC
-$(APPNAME)_LIBS += stream pcre VISAdrv asyn
+$(APPNAME)_LIBS += stream VISAdrv asyn
+ifdef PCRE
+$(APPNAME)_LIBS += pcre
+endif
 include $(TOP)/visa_lib.mak
 
 # VISAdrvTest_registerRecordDeviceDriver.cpp derives from VISAdrvTest.dbd

@@ -7,4 +7,3 @@ endif
 ifneq ($(findstring win32,$(EPICS_HOST_ARCH)),)
 $(APPNAME)_LIBS += visa32
 endif
-$(APPNAME)_SYS_LIBS_Linux += visa

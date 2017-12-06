@@ -13,8 +13,13 @@ USR_INCLUDES += -INIVISA/include
 LIBRARY_IOC += VISAdrv
 
 ifeq (WIN32,$(OS_CLASS))
+# library location on windows, the subst make sure it uses a windows style rather than uxix style path
+# ICPBINARYDIR is the ISIS facility common library area
 NIVISADIR=$(subst /,\,$(ICPBINARYDIR)/NIVISA)
+# possible location of a local installation
+#NIVISADIR=C:\Program Files\IVI Foundation\VISA\Win64
 else
+# library location on Linux
 NIVISADIR=$(ICPBINARYDIR)/NIVISA
 endif
 

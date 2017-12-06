@@ -22,15 +22,16 @@
 # Build variables that are NOT used in paths should be set in
 # the CONFIG_SITE file.
 
-# Variables and paths to dependent modules:
-#MODULES = /path/to/modules
-#MYMODULE = $(MODULES)/my-module
-
-# If using the sequencer, point SNCSEQ at its top directory:
-#SNCSEQ = $(MODULES)/seq-ver
-
 # EPICS_BASE should appear last so earlier modules can override stuff:
 EPICS_BASE = C:/Instrument/Apps/EPICS/base/master
+
+## VISAdrvApp only requires asyn
+ASYN = $(SUPPORT)/asyn/master
+
+## VISAdrvTestApp requires StreamDevice
+STREAMDEVICE=$(SUPPORT)/StreamDevice/master
+## If your StreamDevice installation was built with pcre support, define PCRE too 
+PCRE = $(SUPPORT)/pcre/master
 
 # Set RULES here if you want to use build rules from somewhere
 # other than EPICS_BASE:
@@ -40,6 +41,10 @@ EPICS_BASE = C:/Instrument/Apps/EPICS/base/master
 # without having to modify the configure/RELEASE file itself.
 -include $(TOP)/../RELEASE.local
 -include $(TOP)/configure/RELEASE.local
+
+#
+# ISIS Facility common includes, not needed elsewhere
+#
 
 # top level master release and local private options 
 include $(TOP)/../../../configure/MASTER_RELEASE

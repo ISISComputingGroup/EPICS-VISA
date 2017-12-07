@@ -3,16 +3,16 @@
 
 VISAdrv is an <A HREF="http://www.aps.anl.gov/epics/">EPICS</A> support module allowing access
 to VISA devices from asyn, it is similar in functionality and usage to drvAsynSerialPortConfigure().
-You can use it to access devices such as the NI GPIB/ENET 100
+You can use it to access devices such as the National Instruments 488.2 GPIB/ENET 100
+
+Typically you would create an asyn port using drvAsynVISAPortConfigure() and then use EPICS Stream device to 
+send commands and interpret results. See the @link st.cmd IOC startup file @endlink for example usage.
 
 You will need to edit VISAdrvApp/src/Makefile and change NIVISADIR to point to the location of your
 National Instruments VISA installation
 
-To link against the system NI VISA library (this is only strictly needed if EPICS is being built
-statically i.e. STATIC_BUILD=YES in e.g. CONFIG_SITE). See VISAdrvTestApp/src/build.mak for an example.
-
-Typically you would create an asyn port using drvAsynVISAPortConfigure() and then use EPICS Stream device to 
-send commands and interpret results. See the @link st.cmd IOC startup file @endlink for example usage.
+If you are building EPICS as static libraries (i.e. STATIC_BUILD=YES in e.g. CONFIG_SITE) then the IOC
+as well as VISAdrv will need to link against the system NI VISA library. See VISAdrvTestApp/src/build.mak for an example.
 
 To add this into your program you need to:
 
@@ -21,6 +21,7 @@ To add this into your program you need to:
 <LI> Add VISAdrv to your LIB list
 <LI> include   visa_lib.mak    in your IOC makefile to set the system NI VISA library paths
 </UL>
+See VISAdrvTestApp/src/build.mak for an example.
 
 Then to configure the driver in the IOC at boot time (see iocsBoot/iocVISAdrvtest/st.cmd) use a command like:
 <PRE>
@@ -36,11 +37,13 @@ Then to configure the driver in the IOC at boot time (see iocsBoot/iocVISAdrvtes
     # Remote System: GPIB device added to remote PC and served from there using NI VISA Server 
     drvAsynVISAPortConfigure("L0", "visa://remotecomputer/GPIB0::3::INSTR")
 </PRE>
-
 where L0 is you asyn port name followed by the local or remote VISA name of your device (see NI Measurement and Automation explorer if you don't know the name)
 
+The drvAsynVISAPortConfigure() command supports several additional options that you may need to set to communicate properly
+with the device, see the help page of the command for additional details.
 
-See @link build.mak @endlink
+
+See also @link build.mak @endlink
 
 */
 

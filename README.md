@@ -40,3 +40,15 @@ Then to configure the driver in the IOC at boot time (see iocsBoot/iocVISAdrvtes
 
 where L0 is you asyn port name followed by the local or remote VISA name of your device (see NI Measurement and Automation explorer if you don't know the name)
 
+The drvAsynVISAPortConfigure() command supports some additional options that may sometime be needed:
+    readIntTmoMs  - this sets a timeout be be used when a zero timeout read is specified. Before a write operation stream 
+                    device will do a zero timout read to flush out any unused output from a previous command. With 
+				    GPIB-ENET a zero timeout read caused issues so this can be set to either a small values or
+                    negative to mean "skip such reads".
+    termCharIn    - this is just for optimisation, it tells VISA the termination character and so might 
+	                make reads a little more efficient in some situations. Set to 0 if not needed.
+    deviceSendEOM - Setting this means the device indicates EOM and so NI-VISA will get complete messages. This is useful 
+	                for GPIB-ENET if there is no termination character, NI-VISA will always get a complete message and by
+					asserting EOM in asyn it avoids needing to wait for e.g. the stream device ReadTimeout to otherwise occur 					
+
+See drvAsynVISAPortConfigure() documentation at http://epics.isis.stfc.ac.uk/doxygen/main/support/VISAdrv/index.html for more details

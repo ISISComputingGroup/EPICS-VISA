@@ -30,6 +30,7 @@ ASYN = $(SUPPORT)/asyn/master
 
 ## VISAdrvTestApp requires StreamDevice
 STREAMDEVICE=$(SUPPORT)/StreamDevice/master
+ONCRPC = $(SUPPORT)/oncrpc/master
 ## If your StreamDevice installation was built with pcre support, define PCRE too 
 PCRE = $(SUPPORT)/pcre/master
 
@@ -47,7 +48,3 @@ PCRE = $(SUPPORT)/pcre/master
 
 include $(TOP)/../../../ISIS_CONFIG
 -include $(TOP)/../../../ISIS_CONFIG.$(EPICS_HOST_ARCH)
-
-# Local dependencies
-ASYN=$(SUPPORT)/asyn/master
-PCRE=$(SUPPORT)/pcre/master

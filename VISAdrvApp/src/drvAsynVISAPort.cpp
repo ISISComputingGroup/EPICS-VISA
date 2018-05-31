@@ -164,6 +164,15 @@ getOption(void *drvPvt, asynUser *pasynUser,
     else if (epicsStrCaseCmp(key, "ixoff") == 0) {
         l = epicsSnprintf(val, valSize, "%c",  (flow & VI_ASRL_FLOW_XON_XOFF) ? 'Y' : 'N');
     }
+// this is the formatted io buffer, not the low level one
+//    else if (epicsStrCaseCmp(key, "rbuff") == 0) {
+//		err = viGetAttribute(driver->vi, VI_ATTR_RD_BUF_SIZE, &viu32);
+//      l = epicsSnprintf(val, valSize, "%u", (unsigned)viu32);		
+//    }
+//    else if (epicsStrCaseCmp(key, "wbuff") == 0) {
+//		err = viGetAttribute(driver->vi, VI_ATTR_WR_BUF_SIZE, &viu32);
+//      l = epicsSnprintf(val, valSize, "%u", (unsigned)viu32);		
+//    }
     else {
         epicsSnprintf(pasynUser->errorMessage,pasynUser->errorMessageSize,
                                                 "Unsupported key \"%s\"", key);
@@ -306,6 +315,24 @@ setOption(void *drvPvt, asynUser *pasynUser, const char *key, const char *val)
         epicsSnprintf(pasynUser->errorMessage,pasynUser->errorMessageSize,
                                                     "Option ixany not supported on Windows");
         return asynError;       
+    }
+    else if (epicsStrCaseCmp(key, "wbuff") == 0) {
+        int buflen;
+        if(sscanf(val, "%d", &buflen) != 1) {
+            epicsSnprintf(pasynUser->errorMessage, pasynUser->errorMessageSize,
+                                                                "Bad number");
+            return asynError;
+        }
+        err = viSetBuf(driver->vi, VI_IO_OUT_BUF, buflen);
+    }
+    else if (epicsStrCaseCmp(key, "rbuff") == 0) {
+        int buflen;
+        if(sscanf(val, "%d", &buflen) != 1) {
+            epicsSnprintf(pasynUser->errorMessage, pasynUser->errorMessageSize,
+                                                                "Bad number");
+            return asynError;
+        }
+        err = viSetBuf(driver->vi, VI_IO_IN_BUF, buflen);
     }
     else if (epicsStrCaseCmp(key, "") != 0) {
         epicsSnprintf(pasynUser->errorMessage,pasynUser->errorMessageSize,
@@ -562,7 +589,7 @@ static asynStatus writeIt(void *drvPvt, asynUser *pasynUser,
 			err = viSetAttribute(driver->vi, VI_ATTR_TMO_VALUE, static_cast<int>(driver->timeout * 1000.0));
 		}
 		VI_CHECK_ERROR("set timeout", err);
-	ViUInt32 actual = 0;
+	unsigned long actual = 0;
 	err = viWrite(driver->vi, (ViBuf)data, static_cast<ViUInt32>(numchars), &actual);
 	if ( err == VI_ERROR_TMO )
 	{
@@ -599,7 +626,7 @@ static asynStatus readIt(void *drvPvt, asynUser *pasynUser,
     int reason = 0;
     asynStatus status = asynSuccess;
 	epicsTimeStamp epicsTS1, epicsTS2;
-	ViUInt32 actual = 0, actualex = 0;
+	unsigned long actual = 0, actualex = 0;
 	ViStatus err;
 
     assert(driver);
@@ -762,7 +789,7 @@ static asynStatus readIt(void *drvPvt, asynUser *pasynUser,
 //    }
     *nbytesTransfered = actual;
     /* If there is room add a null byte */
-    if (actual < maxchars)
+    if (actual < (int) maxchars)
         data[actual] = 0;
     else
         reason |= ASYN_EOM_CNT;
@@ -876,7 +903,8 @@ drvAsynVISAPortConfigure(const char *portName,
         driver->readIntTimeout = VI_TMO_IMMEDIATE;
 	}
     driver->termCharIn = 0;
-    if (termCharIn != NULL && *termCharIn != '\0')
+	// we also trap "0" as a term char as likely sent by accident
+    if ( termCharIn != NULL && *termCharIn != '\0' && !(strlen(termCharIn) == 1 && *termCharIn == '0') )
     {
 		char termChar[16];
 	    epicsStrnRawFromEscaped(termChar, sizeof(termChar), termCharIn, strlen(termCharIn));

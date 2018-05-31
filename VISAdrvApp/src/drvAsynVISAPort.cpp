@@ -50,6 +50,7 @@ typedef struct {
 	bool               deviceSendsEOM; ///< @copydoc drvAsynVISAPortConfigureArg7
     int		   		   readIntTimeout; ///< @copydoc drvAsynVISAPortConfigureArg5
     ViUInt8            termCharIn;     ///< @copydoc drvAsynVISAPortConfigureArg6
+	bool 			   flush_on_write; ///< use viFlush to flush output buffer every write
     asynInterface      common;
     asynInterface      option;
     asynInterface      octet;
@@ -334,6 +335,19 @@ setOption(void *drvPvt, asynUser *pasynUser, const char *key, const char *val)
         }
         err = viSetBuf(driver->vi, VI_IO_IN_BUF, buflen);
     }
+    else if (epicsStrCaseCmp(key, "flush") == 0) {
+        if (epicsStrCaseCmp(val, "Y") == 0) {
+			driver->flush_on_write = true;
+        }
+        else if (epicsStrCaseCmp(val, "N") == 0) {
+			driver->flush_on_write = false;
+        }
+        else {
+            epicsSnprintf(pasynUser->errorMessage,pasynUser->errorMessageSize,
+                                                      "Invalid flush value.");
+            return asynError;
+        }
+    }
     else if (epicsStrCaseCmp(key, "") != 0) {
         epicsSnprintf(pasynUser->errorMessage,pasynUser->errorMessageSize,
                                                 "Unsupported key \"%s\"", key);
@@ -406,7 +420,7 @@ asynCommonReport(void *drvPvt, FILE *fp, int details)
         fprintf(fp, "        Is GPIB device: %c\n", (driver->isGPIB ? 'Y' : 'N'));
         fprintf(fp, "      Device sends EOM: %c\n", (driver->deviceSendsEOM ? 'Y' : 'N'));
         fprintf(fp, "  Input term char hint: \"%s\" (0x%x)\n", termChar, (unsigned)driver->termCharIn);
-        fprintf(fp, "Internal read tmo (ms): %d\n", (driver->readIntTimeout == VI_TMO_IMMEDIATE ? 0 : (int)driver->readIntTimeout));
+        fprintf(fp, "Internal read tmo (ms): %d\n", ((int)driver->readIntTimeout));
     }
 }
 
@@ -470,12 +484,13 @@ connectIt(void *drvPvt, asynUser *pasynUser)
 	
 	if (intf_type == VI_INTF_ASRL) // is it a serial device?
 	{
-		// disable read/write exit on serial specific termination character, we use VI_ATTR_TERMCHAR_EN
-		err = viSetAttribute(driver->vi, VI_ATTR_ASRL_END_IN, VI_ASRL_END_NONE);
-	    VI_CHECK_ERROR("ASRL_END_IN", err);
-		err = viSetAttribute(driver->vi, VI_ATTR_ASRL_END_OUT, VI_ASRL_END_NONE);
-	    VI_CHECK_ERROR("ASRL_END_OUT", err);
 		driver->isSerial = true;
+		err = viSetAttribute(driver->vi, VI_ATTR_ASRL_END_OUT, VI_ASRL_END_NONE);
+	    VI_CHECK_ERROR("VI_ATTR_ASRL_END_OUT", err);
+        err = viSetAttribute(driver->vi, VI_ATTR_SEND_END_EN, VI_FALSE);
+	    VI_CHECK_ERROR("VI_ATTR_SEND_END_EN", err);
+        err = viSetAttribute(driver->vi, VI_ATTR_SUPPRESS_END_EN, VI_TRUE);
+	    VI_CHECK_ERROR("VI_ATTR_SUPPRESS_END_EN", err);
 	}
 	else
 	{
@@ -500,16 +515,26 @@ connectIt(void *drvPvt, asynUser *pasynUser)
 	if (driver->termCharIn != 0)
 	{
 		// tell VISA to terminate a read early when this character is seen
+		if (driver->isSerial)
+		{
+		    err = viSetAttribute(driver->vi, VI_ATTR_ASRL_END_IN, VI_ASRL_END_TERMCHAR);
+	        VI_CHECK_ERROR("VI_ATTR_ASTR_END_IN", err);
+		}			
 	    err = viSetAttribute(driver->vi, VI_ATTR_TERMCHAR, driver->termCharIn);
-	    VI_CHECK_ERROR("termchar", err);
+	    VI_CHECK_ERROR("VI_ATTR_TERMCHAR", err);
 	    err = viSetAttribute(driver->vi, VI_ATTR_TERMCHAR_EN, VI_TRUE);
 	}
 	else
 	{
 	    // disable read/write command exit on termination character VI_ATTR_TERMCHAR in general
+		if (driver->isSerial)
+		{
+		    err = viSetAttribute(driver->vi, VI_ATTR_ASRL_END_IN, VI_ASRL_END_NONE);
+	        VI_CHECK_ERROR("VI_ATTR_ASTR_END_IN", err);
+		}			
 	    err = viSetAttribute(driver->vi, VI_ATTR_TERMCHAR_EN, VI_FALSE);
 	}
-	VI_CHECK_ERROR("termchar_en", err);
+	VI_CHECK_ERROR("VI_ATTR_TERMCHAR_EN", err);
 
 	err = viClear(driver->vi);
 	VI_CHECK_ERROR("viClear", err);
@@ -582,7 +607,7 @@ static asynStatus writeIt(void *drvPvt, asynUser *pasynUser,
         driver->timeout = pasynUser->timeout;
 		if (driver->timeout == 0)
 		{			
-			err = viSetAttribute(driver->vi, VI_ATTR_TMO_VALUE, VI_TMO_IMMEDIATE);
+			err = viSetAttribute(driver->vi, VI_ATTR_TMO_VALUE, VI_TMO_INFINITE);
 		}
 		else
 		{
@@ -601,6 +626,21 @@ static asynStatus writeIt(void *drvPvt, asynUser *pasynUser,
             epicsSnprintf(pasynUser->errorMessage,pasynUser->errorMessageSize,
                           "%s write error %s", driver->resourceName, errMsg(driver->vi, err).c_str());
             return asynError;		
+	}
+	if (driver->flush_on_write)
+	{
+		err = viFlush(driver->vi, VI_IO_OUT_BUF);
+	    if ( err == VI_ERROR_TMO )
+	    {
+		    timedout = true;
+	    }
+	    else if ( err != VI_SUCCESS )
+	    {
+            closeConnection(pasynUser,driver,"Write error");
+            epicsSnprintf(pasynUser->errorMessage,pasynUser->errorMessageSize,
+                          "%s write error %s", driver->resourceName, errMsg(driver->vi, err).c_str());
+            return asynError;		
+	    }
 	}
     driver->nWriteBytes += actual;
     *nbytesTransfered = actual;
@@ -685,7 +725,7 @@ static asynStatus readIt(void *drvPvt, asynUser *pasynUser,
 // prior to a write, hence we need to map to  readIntTimeout  to avois problems on GPIB-ENET
 	if (driver->timeout == 0)
 	{
-		err = viSetAttribute(driver->vi, VI_ATTR_TMO_VALUE, driver->readIntTimeout);
+		err = viSetAttribute(driver->vi, VI_ATTR_TMO_VALUE, (driver->readIntTimeout == 0 ? VI_TMO_IMMEDIATE  : driver->readIntTimeout) );
 	}
 	else
 	{
@@ -698,7 +738,7 @@ static asynStatus readIt(void *drvPvt, asynUser *pasynUser,
 	    err = viRead(driver->vi, (ViBuf)data, static_cast<ViUInt32>(maxchars), &actual);
 		// we have had issues with GPIB-ENET and immediate timeout, it returns bus error sometimes
 		// so don't close connectuion here, but ultimately return asynError via later logic
-		if (err < 0 && err != VI_ERROR_TMO && (driver->timeout != 0 || (driver->timeout == 0 && driver->readIntTimeout != VI_TMO_IMMEDIATE)) )
+		if (err < 0 && err != VI_ERROR_TMO && (driver->timeout != 0 || (driver->timeout == 0 && driver->readIntTimeout != 0)) )
 		{
 			closeConnection(pasynUser, driver, "Read error");
 			epicsSnprintf(pasynUser->errorMessage, pasynUser->errorMessageSize,
@@ -711,7 +751,7 @@ static asynStatus readIt(void *drvPvt, asynUser *pasynUser,
 		err = viRead(driver->vi, (ViBuf)data, 1, &actual);
 		// we have had issues with GPIB-ENET and immediate timeout, returns bus error sometimes
 		// so don't close connectuion here, but ultimately return asynError via later logic
-		if (err < 0 && err != VI_ERROR_TMO && (driver->timeout != 0 || (driver->timeout == 0 && driver->readIntTimeout != VI_TMO_IMMEDIATE)) )
+		if (err < 0 && err != VI_ERROR_TMO && (driver->timeout != 0 || (driver->timeout == 0 && driver->readIntTimeout != 0)) )
 		{
 			closeConnection(pasynUser, driver, "Read error (stage 1)");
 			epicsSnprintf(pasynUser->errorMessage, pasynUser->errorMessageSize,
@@ -723,7 +763,7 @@ static asynStatus readIt(void *drvPvt, asynUser *pasynUser,
 			// read anything else that might be there, originally this used VI_TMO_IMMEDIATE
 			// but we had a few timeout issues with GPIP over ethernet so this is now 
 			// configurable to a small finite value
-			err = viSetAttribute(driver->vi, VI_ATTR_TMO_VALUE, driver->readIntTimeout);
+			err = viSetAttribute(driver->vi, VI_ATTR_TMO_VALUE, (driver->readIntTimeout > 0 ? driver->readIntTimeout : VI_TMO_IMMEDIATE));
 			VI_CHECK_ERROR("set timeout", err);
 			err = viRead(driver->vi, reinterpret_cast<ViBuf>(data + actual), static_cast<ViUInt32>(maxchars - actual), &actualex);
 			if (err < 0 && err != VI_ERROR_TMO)
@@ -892,6 +932,7 @@ drvAsynVISAPortConfigure(const char *portName,
     driver->timeout = -0.1;
     driver->isSerial = false;
     driver->isGPIB = false;
+    driver->flush_on_write = false;
 	driver->deviceSendsEOM = (deviceSendsEOM != 0);
 	if (readIntTmoMs != 0)
 	{
@@ -900,7 +941,7 @@ drvAsynVISAPortConfigure(const char *portName,
 	}
 	else
 	{
-        driver->readIntTimeout = VI_TMO_IMMEDIATE;
+        driver->readIntTimeout = 0;
 	}
     driver->termCharIn = 0;
 	// we also trap "0" as a term char as likely sent by accident

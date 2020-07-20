@@ -614,7 +614,7 @@ static asynStatus writeIt(void *drvPvt, asynUser *pasynUser,
 			err = viSetAttribute(driver->vi, VI_ATTR_TMO_VALUE, static_cast<int>(driver->timeout * 1000.0));
 		}
 		VI_CHECK_ERROR("set timeout", err);
-	unsigned long actual = 0;
+	ViUInt32 actual = 0;
 	err = viWrite(driver->vi, (ViBuf)data, static_cast<ViUInt32>(numchars), &actual);
 	if ( err == VI_ERROR_TMO )
 	{
@@ -666,7 +666,7 @@ static asynStatus readIt(void *drvPvt, asynUser *pasynUser,
     int reason = 0;
     asynStatus status = asynSuccess;
 	epicsTimeStamp epicsTS1, epicsTS2;
-	unsigned long actual = 0, actualex = 0;
+        ViUInt32 actual = 0, actualex = 0;
 	ViStatus err;
 
     assert(driver);

@@ -8,7 +8,6 @@ include $(TOP)/configure/CONFIG
 #==================================================
 # build a support library
 
-USR_INCLUDES += -INIVISA/include
 
 LIBRARY_IOC += VISAdrv
 
@@ -16,11 +15,12 @@ ifeq (WIN32,$(OS_CLASS))
 # library location on windows, the subst make sure it uses a windows style rather than uxix style path
 # ICPBINARYDIR is the ISIS facility common library area
 NIVISADIR=$(subst /,\,$(ICPBINARYDIR)/NIVISA)
+USR_INCLUDES += -INIVISA/include
 # possible location of a local installation
 #NIVISADIR=C:\Program Files\IVI Foundation\VISA\Win64
 else
-# library location on Linux
-NIVISADIR=$(ICPBINARYDIR)/NIVISA
+## Linux: visa.h header location
+USR_INCLUDES += -I/usr/include/ni-visa
 endif
 
 DBD += VISAdrv.dbd
@@ -43,6 +43,11 @@ VISALIB = NIVISA/lib/msc
 LIB_INSTALLS_WIN32 += $(VISALIB)/visa32.lib
 VISAdrv_SYS_LIBS_WIN32 += $(VISALIB)/visa32
 #BIN_INSTALLS_WIN32 += $(NIVISADIR)/Bin/*.dll
+endif
+ifneq ($(findstring linux,$(EPICS_HOST_ARCH)),)
+## Linux: location of libvisa.so
+VISAdrv_LDFLAGS += -L/usr/lib/x86_64-linux-gnu
+VISAdrv_SYS_LIBS_Linux += visa
 endif
 
 #===========================

@@ -6,7 +6,7 @@ serial device then asynSetOption() etc. can be used as normal. You can also use 
 access National Instruments GPIB 488.2 devices such as GPIB/ENET 100
 
 You will need to edit VISAdrvApp/src/Makefile and change NIVISADIR to point to the location of your
-National Instruments VISA installation
+National Instruments VISA installation on WIndows. On Linux look at the Linux: entries in this Makefile that specify the location of Visa headers and libraries.
  
 To add this module to an existing driver then you need to follow some of the steps taken in the
 VISAdrvTestApp directory. You will need to (see VISAdrvTestApp/src/build.mak): 

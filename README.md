@@ -1,12 +1,13 @@
 # VISAdrv - EPICS asyn driver interface to National Instruments VISA library
 
 The module creates an equivalent to the drvAsynSerialPortConfigure() command called drvAsynVISAPortConfigure()
-which can be used to connect to serial devices served by National Instruments VISA. If the device is a
-serial device then asynSetOption() etc. can be used as normal. You can also use drvAsynVISAPortConfigure() to
+which can be used to connect to serial devices served by National Instruments VISA (https://www.ni.com/visa/default.htm). 
+If the device is a serial device then asynSetOption() etc. can be used as normal. You can also use drvAsynVISAPortConfigure() to
 access National Instruments GPIB 488.2 devices such as GPIB/ENET 100
 
 You will need to edit VISAdrvApp/src/Makefile and change NIVISADIR to point to the location of your
-National Instruments VISA installation on WIndows. On Linux look at the Linux: entries in this Makefile that specify the location of Visa headers and libraries.
+National Instruments VISA installation on WIndows. On Linux look at the Linux: entries in this Makefile
+that specify the location of Visa headers and libraries.
  
 To add this module to an existing driver then you need to follow some of the steps taken in the
 VISAdrvTestApp directory. You will need to (see VISAdrvTestApp/src/build.mak): 

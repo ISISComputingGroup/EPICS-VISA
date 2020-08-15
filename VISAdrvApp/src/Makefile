@@ -45,9 +45,9 @@ VISAdrv_SYS_LIBS_WIN32 += $(VISALIB)/visa32
 #BIN_INSTALLS_WIN32 += $(NIVISADIR)/Bin/*.dll
 endif
 ifneq ($(findstring linux,$(EPICS_HOST_ARCH)),)
-## Linux: location of National Instruments libvisa.so library
-VISAdrv_LDFLAGS += -L/usr/lib/x86_64-linux-gnu
-VISAdrv_SYS_LIBS_Linux += visa
+## set path to visa on Linux in visa_lib.mak
+APPNAME=VISAdrv
+include $(TOP)/visa_lib.mak
 endif
 
 #===========================

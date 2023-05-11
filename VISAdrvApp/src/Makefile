@@ -16,7 +16,7 @@ ifeq (WIN32,$(OS_CLASS))
 # At the ISIS facility this library is in a subdirectory of the ICPBINARYDIR common library area
 NIVISADIR=$(subst /,\,$(ICPBINARYDIR)/NIVISA)
 # possible other location of an installation if no local one
-ifeq ($(wildcard $(NIVISADIR)/*),)
+ifeq ($(wildcard $(subst \,/,$(NIVISADIR))/*),)
 NIVISADIR=C:\Program Files\IVI Foundation\VISA\Win64
 endif
 USR_INCLUDES += -INIVISA/include
@@ -36,10 +36,11 @@ VISAdrv_LIBS += $(EPICS_BASE_IOC_LIBS)
 ## we don't install Visa DLLs as they may conflict with local ones
 ifneq ($(findstring windows,$(EPICS_HOST_ARCH)),)
 ifneq ($(findstring windows-x64-mingw,$(EPICS_HOST_ARCH)),)
+NIVISADIR := $(subst \,/,$(NIVISADIR))
 VISALIB = NIVISA/Lib_x64/mingw
 LIB_INSTALLS_WIN32 += $(VISALIB)/libvisa64.dll.a
 VISAdrv_SYS_LIBS_WIN32 += visa64
-VISAdrv_LDFLAGS_WIN32 += -L$(VISALIB)/mingw
+VISAdrv_LDFLAGS_WIN32 += -L$(VISALIB)
 else
 VISALIB = NIVISA/Lib_x64/msc
 LIB_INSTALLS_WIN32 += $(VISALIB)/visa64.lib

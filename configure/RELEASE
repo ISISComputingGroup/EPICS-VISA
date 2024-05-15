@@ -27,6 +27,8 @@ EPICS_BASE = C:/Instrument/Apps/EPICS/base/master
 
 ## VISAdrvApp only requires asyn
 ASYN = $(SUPPORT)/asyn/master
+CALC = $(SUPPORT)/calc/master
+SSCAN = $(SUPPORT)/sscan/master
 
 ## VISAdrvTestApp requires StreamDevice
 STREAMDEVICE=$(SUPPORT)/StreamDevice/master

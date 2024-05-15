@@ -19,12 +19,13 @@ DBD += $(APPNAME).dbd
 
 # VISAdrvTest.dbd will be made up from these files:
 $(APPNAME)_DBD += base.dbd
+$(APPNAME)_DBD += calcSupport.dbd
 $(APPNAME)_DBD += asyn.dbd
 $(APPNAME)_DBD += VISAdrv.dbd
 $(APPNAME)_DBD += stream.dbd
 
 # Add all the support libraries needed by this IOC
-$(APPNAME)_LIBS += stream VISAdrv asyn
+$(APPNAME)_LIBS += stream VISAdrv asyn calc sscan
 ifdef PCRE
 $(APPNAME)_LIBS += pcre
 endif
